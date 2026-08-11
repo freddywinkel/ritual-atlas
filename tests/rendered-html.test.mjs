@@ -371,6 +371,7 @@ test("guards audited persistence, journal, spread, and security behavior", async
   assert.match(importControl, /tabIndex=\{-1\}/);
 
   assert.match(component, /saveState\(state, storageRevisionRef\.current\)/);
+  assert.match(component, /dirtyStateRef\.current = true;\s+setSaveStatus\("saving"\)/);
   assert.match(component, /new BroadcastChannel\("ritual-atlas-state"\)/);
   assert.match(component, /postMessage\(\{[\s\S]*?type: "state-saved"[\s\S]*?revision/);
   assert.match(component, /const revision = await saveState\(initial\)/);

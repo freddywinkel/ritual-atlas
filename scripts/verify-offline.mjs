@@ -238,6 +238,29 @@ try {
   await offlineLoad;
 
   const offlineResult = await evaluate(cdp, `(async () => {
+    async function readStoredSummary() {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("ritual-atlas", 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const raw = await new Promise((resolve, reject) => {
+          const transaction = database.transaction("app-state", "readonly");
+          const request = transaction.objectStore("app-state").get("current");
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const state = raw?.state ?? raw;
+        return {
+          revision: raw?.revision ?? 0,
+          readings: Array.isArray(state?.readings) ? state.readings.length : -1,
+          activeDraft: typeof state?.activeDraftId === "string",
+        };
+      } finally {
+        database.close();
+      }
+    }
     await new Promise((resolve) => setTimeout(resolve, 1000));
     let uncachedRequestFailed = false;
     try {
@@ -283,6 +306,7 @@ try {
       mixedSelected,
       savedOnDevice: [...document.querySelectorAll('[role="status"]')]
         .some((status) => status.textContent.includes("Saved on this device")),
+      storage: await readStoredSummary(),
     };
   })()`);
 
@@ -293,7 +317,10 @@ try {
     offlineResult.cardBytes < 80_000 ||
     offlineResult.nextHeading !== "Reading" ||
     !offlineResult.mixedSelected ||
-    !offlineResult.savedOnDevice
+    !offlineResult.savedOnDevice ||
+    offlineResult.storage.revision < 1 ||
+    offlineResult.storage.readings !== 1 ||
+    !offlineResult.storage.activeDraft
   ) {
     throw new Error(`Offline interaction failed: ${JSON.stringify(offlineResult)}`);
   }
@@ -302,6 +329,29 @@ try {
   await cdp.send("Page.reload");
   await persistedLoad;
   const persistedDraft = await evaluate(cdp, `(async () => {
+    async function readStoredSummary() {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("ritual-atlas", 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      try {
+        const raw = await new Promise((resolve, reject) => {
+          const transaction = database.transaction("app-state", "readonly");
+          const request = transaction.objectStore("app-state").get("current");
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const state = raw?.state ?? raw;
+        return {
+          revision: raw?.revision ?? 0,
+          readings: Array.isArray(state?.readings) ? state.readings.length : -1,
+          activeDraft: typeof state?.activeDraftId === "string",
+        };
+      } finally {
+        database.close();
+      }
+    }
     let continueFound = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const continueButton = document.querySelector(".hero-actions .secondary-action");
@@ -327,6 +377,7 @@ try {
         .map((button) => button.textContent.trim().replace(/\\s+/g, " "))
         .filter(Boolean)
         .slice(0, 12),
+      storage: await readStoredSummary(),
     };
   })()`);
 
@@ -336,7 +387,10 @@ try {
     persistedDraft.position !== "Tarot voice" ||
     persistedDraft.progress !== "0/3" ||
     persistedDraft.hasSaveError ||
-    !persistedDraft.continueFound
+    !persistedDraft.continueFound ||
+    persistedDraft.storage.revision < 1 ||
+    persistedDraft.storage.readings !== 1 ||
+    !persistedDraft.storage.activeDraft
   ) {
     throw new Error(`Persisted draft did not survive an offline reload: ${JSON.stringify(persistedDraft)}`);
   }

@@ -259,6 +259,7 @@ export default function TarotApp() {
       return;
     }
     dirtyStateRef.current = true;
+    setSaveStatus("saving");
     const timeout = window.setTimeout(() => {
       persistState(appState).catch(() => undefined);
     }, 250);

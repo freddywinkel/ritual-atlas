@@ -4,7 +4,7 @@ import "./globals.css";
 
 const siteOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN ?? "http://localhost:3000";
 const siteUrl = new URL(PUBLIC_BASE_PATH ? `${PUBLIC_BASE_PATH}/` : "/", siteOrigin);
-const socialImage = new URL(publicPath("/og.jpg"), siteOrigin).toString();
+const socialImage = new URL(publicPath("/ritual-gate-og.jpg"), siteOrigin).toString();
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
@@ -39,12 +39,13 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: publicPath("/favicon.png"), sizes: "64x64", type: "image/png" },
-      { url: publicPath("/icon-192.png"), sizes: "192x192", type: "image/png" },
+      { url: publicPath("/favicon.svg"), type: "image/svg+xml" },
+      { url: publicPath("/ritual-gate-favicon.png"), sizes: "64x64", type: "image/png" },
+      { url: publicPath("/ritual-gate-icon-192.png"), sizes: "192x192", type: "image/png" },
     ],
     apple: [
       {
-        url: publicPath("/apple-touch-icon.png"),
+        url: publicPath("/ritual-gate-apple-touch-icon.png"),
         sizes: "180x180",
         type: "image/png",
       },

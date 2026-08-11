@@ -48,6 +48,8 @@ import type {
   SpreadSnapshot,
 } from "../types";
 import { CardArtwork } from "./CardArtwork";
+import { NewReadingGlyph } from "./NewReadingGlyph";
+import { RitualGateMark } from "./RitualGateMark";
 
 type Screen = "home" | "setup" | "reading" | "journal" | "insights" | "settings";
 type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -59,9 +61,9 @@ type ConfirmationState =
   | { kind: "restore"; backup: BackupPayload }
   | { kind: "reset" };
 
-const NAV_ITEMS: readonly { screen: Screen; label: UiCopyKey; symbol: string }[] = [
+const NAV_ITEMS: readonly { screen: Screen; label: UiCopyKey; symbol: ReactNode }[] = [
   { screen: "home", label: "nav.home", symbol: "⌂" },
-  { screen: "setup", label: "nav.newReading", symbol: "✣" },
+  { screen: "setup", label: "nav.newReading", symbol: <NewReadingGlyph /> },
   { screen: "journal", label: "nav.journal", symbol: "▣" },
   { screen: "insights", label: "nav.insights", symbol: "⌁" },
   { screen: "settings", label: "nav.settings", symbol: "⚙" },
@@ -952,7 +954,7 @@ export default function TarotApp() {
   if (!loaded) {
     return (
       <main className="loading-screen" role="status" aria-live="polite">
-        <div className="loading-mark" aria-hidden="true">✣</div>
+        <div className="loading-mark" aria-hidden="true"><RitualGateMark /></div>
         <p>{UI_COPY.en["app.name"]}</p>
       </main>
     );
@@ -967,7 +969,7 @@ export default function TarotApp() {
         inert={pickerOpen || Boolean(confirmation) ? true : undefined}
       >
         <button className="brand-lockup" type="button" onClick={() => navigate("home")}>
-          <span className="brand-mark" aria-hidden="true">✣</span>
+          <span className="brand-mark" aria-hidden="true"><RitualGateMark /></span>
           <span><strong>{t("app.name")}</strong><small>EN / NL</small></span>
         </button>
         <nav className="rail-nav">
@@ -1008,7 +1010,7 @@ export default function TarotApp() {
       >
         <header className="mobile-header">
           <button className="mobile-brand" type="button" onClick={() => navigate("home")}>
-            <span aria-hidden="true">✣</span> {t("app.name")}
+            <RitualGateMark className="mobile-brand-mark" compact /> {t("app.name")}
           </button>
           <span className="mobile-screen-title">{screenTitle(screen, t)}</span>
           <button
@@ -1130,7 +1132,7 @@ export default function TarotApp() {
             <p className="lede">{t("home.subtitle")}</p>
             <div className="hero-actions">
               <button className="primary-action" type="button" onClick={() => navigate("setup")}>
-                <span aria-hidden="true">✣</span>{t("home.startReading")}
+                <NewReadingGlyph className="new-reading-glyph" />{t("home.startReading")}
               </button>
               {draft && (
                 <button className="secondary-action" type="button" onClick={() => openReading(draft)}>
@@ -1750,7 +1752,7 @@ export default function TarotApp() {
           </section>
         </div>
         <section className="install-panel">
-          <span className="brand-mark" aria-hidden="true">✣</span>
+          <span className="brand-mark" aria-hidden="true"><RitualGateMark /></span>
           <div><h2>{t("app.installTitle")}</h2><p>{t("app.installBody")}</p></div>
         </section>
       </div>

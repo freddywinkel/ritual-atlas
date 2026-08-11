@@ -55,6 +55,7 @@ The development server prints the local address it selected. On Windows,
 ```powershell
 npx.cmd tsc --noEmit --pretty false
 npm.cmd run lint
+npm.cmd run brand:audit
 npm.cmd test
 node --check public\sw.js
 npm.cmd run art:audit
@@ -80,6 +81,23 @@ npm.cmd run art:contact
 The stable file IDs come from `app/data/cards.ts`. The audit requires one valid,
 non-duplicate WebP for every catalog entry. The shared creative boundary and
 technical rules are documented in `docs/ART_DIRECTION.md`.
+
+## Brand asset pipeline
+
+The selected Ritual Gate logo is maintained as a scalable SVG source. Generate
+or verify the favicon, ordinary PWA icons, maskable icons, Apple touch icon, and
+social preview with:
+
+```powershell
+npm.cmd run brand:generate
+npm.cmd run brand:audit
+```
+
+The generated files use dedicated Ritual Gate URLs so browsers receive a clear
+icon-change signal. An existing iPhone Home Screen installation can still keep
+its previous operating-system icon; if that happens, remove the installed app
+and add it to the Home Screen again. Export a journal backup before removing an
+installation that already contains readings.
 
 ## Installation on iPhone
 

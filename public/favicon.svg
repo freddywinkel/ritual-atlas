@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+      <defs>
+        <radialGradient id="ritual-night" cx="50%" cy="35%" r="78%">
+          <stop offset="0" stop-color="#103A45"/>
+          <stop offset="0.58" stop-color="#06232C"/>
+          <stop offset="1" stop-color="#03151C"/>
+        </radialGradient>
+        <linearGradient id="ritual-edge" x1="13" y1="9" x2="88" y2="94" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#E8C56F" stop-opacity=".42"/>
+          <stop offset=".55" stop-color="#E8C56F" stop-opacity=".08"/>
+          <stop offset="1" stop-color="#E8C56F" stop-opacity=".28"/>
+        </linearGradient>
+      </defs>
+      <rect width="100" height="100" fill="url(#ritual-night)"/>
+      <rect x="3" y="3" width="94" height="94" rx="20" fill="none" stroke="url(#ritual-edge)" stroke-width=".65"/>
+      <g transform="translate(4 4) scale(0.92)"><path
+    d="M16 89V40C16 21.2 31.2 6 50 6s34 15.2 34 34v49H16Z"
+    fill="none"
+    stroke="#F1CB72"
+    stroke-width="5.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M56 89C44.3 81.5 37 73.5 40 65.3c3-8.2 18.2-9.2 21.1-15.8 2-4.7-4.9-8.5-10.1-11.5"
+    fill="none"
+    stroke="#F1CB72"
+    stroke-width="8.2"
+    stroke-linecap="round"
+  />
+  <path
+    d="M44.2 62.8c8.8 2.7 18.4 1.1 25.4-3.9"
+    fill="none"
+    stroke="#F1CB72"
+    stroke-width="4"
+    stroke-linecap="round"
+  />
+  <circle cx="70.6" cy="58.2" r="4.1" fill="#F1CB72"/>
+  <circle cx="70.6" cy="58.2" r="1.7" fill="#08242D"/>
+  <path
+    d="M50 16.5c1.35 5.6 3.7 8 9.3 9.3-5.6 1.35-8 3.75-9.3 9.35-1.35-5.6-3.75-8-9.35-9.35 5.6-1.3 8-3.7 9.35-9.3Z"
+    fill="#FFF0C4"
+  /></g>
+    </svg>

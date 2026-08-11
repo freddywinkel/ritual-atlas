@@ -332,7 +332,7 @@ test("ships the complete local-first PWA surface", async () => {
   assert.match(verifyOffline, /Dual Aspect/);
   assert.match(verifyOffline, /savedOnDevice/);
   assert.match(verifyOffline, /persistedDraft/);
-  assert.match(verifyOffline, /Continue draft/);
+  assert.match(verifyOffline, /hero-actions \.secondary-action/);
   assert.equal(packageJson.name, "ritual-atlas");
   assert.equal(packageJson.version, "1.0.0");
   assert.match(packageJson.scripts["verify:offline"], /--pages/);
@@ -360,7 +360,11 @@ test("guards audited persistence, journal, spread, and security behavior", async
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
   ]);
 
-  const importControl = sourceSection(component, "ref={importInputRef}", "/>\n    </div>");
+  const importControl = sourceSection(
+    component,
+    "ref={importInputRef}",
+    "onChange={importBackup}",
+  );
   assert.match(importControl, /\bhidden\b/);
   assert.match(importControl, /type="file"/);
   assert.match(importControl, /accept="application\/json,\.json"/);
@@ -374,7 +378,7 @@ test("guards audited persistence, journal, spread, and security behavior", async
   assert.match(component, /let hasSeenController =/);
   assert.match(component, /if \(hasSeenController\) setUpdateAvailable\(true\)/);
 
-  const globalNotice = sourceSection(component, "{storageConflict ? (", "<main\n          ref={screenRef}");
+  const globalNotice = sourceSection(component, "{storageConflict ? (", "<main");
   assert.match(globalNotice, /className="notice notice--error" role="alert"/);
   assert.match(globalNotice, /saveStatus === "error"/);
   assert.match(globalNotice, /errors\.staleData/);

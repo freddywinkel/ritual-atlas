@@ -113,14 +113,16 @@ h3 {
 }
 
 .loading-mark {
-  width: 58px;
-  height: 58px;
+  width: 68px;
+  height: 68px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--gold);
-  border-radius: 50%;
-  font-size: 28px;
   animation: breathe 2.4s ease-in-out infinite;
+}
+
+.loading-mark img {
+  width: 100%;
+  height: 100%;
 }
 
 @keyframes breathe {
@@ -178,16 +180,22 @@ h3 {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(232, 197, 111, 0.55);
-  border-radius: 50%;
-  color: var(--gold);
-  background: var(--gold-soft);
-  font-size: 18px;
+  padding: 3px;
+  border: 1px solid rgba(232, 197, 111, 0.32);
+  border-radius: 13px;
+  background: radial-gradient(circle at 50% 30%, rgba(18, 58, 69, 0.9), rgba(3, 21, 28, 0.9));
+  box-shadow: inset 0 0 20px rgba(232, 197, 111, 0.04);
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .rail-nav {
@@ -214,6 +222,19 @@ h3 {
   color: var(--ink-soft);
   font-size: 18px;
   text-align: center;
+}
+
+.rail-nav button span > svg,
+.bottom-nav button span > svg,
+.new-reading-glyph {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.rail-nav button span > svg,
+.bottom-nav button span > svg {
+  margin: 0 auto;
 }
 
 .rail-nav button:hover,
@@ -1496,6 +1517,7 @@ h3 {
     backdrop-filter: blur(18px);
   }
   .mobile-brand { min-height: 42px; display: flex; align-items: center; gap: 8px; font-family: var(--serif); font-size: 18px; text-align: left; }
+  .mobile-brand-mark { width: 24px; height: 24px; flex: 0 0 auto; }
   .mobile-brand span { color: var(--gold); }
   .mobile-screen-title { color: var(--muted); font-size: 10px; }
   .language-shortcut { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--gold); font-size: 10px; cursor: pointer; }

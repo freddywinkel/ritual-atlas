@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
+import sharp from "sharp";
 
 const root = new URL("../", import.meta.url);
 
@@ -305,7 +306,8 @@ test("ships the complete local-first PWA surface", async () => {
 
   assert.match(page, /<TarotApp \/>/);
   assert.match(layout, /Ritual Atlas/);
-  assert.match(layout, /\/og\.jpg/);
+  assert.match(layout, /\/ritual-gate-og\.jpg/);
+  assert.match(component, /RitualGateMark/);
   assert.match(component, /loadStateSnapshot\(\)/);
   assert.match(component, /makeBackup\(appState\)/);
   assert.match(component, /\.register\(publicPath\("\/sw\.js"\)\)/);
@@ -318,7 +320,15 @@ test("ships the complete local-first PWA surface", async () => {
   assert.match(copy, /"app\.name": "Ritual Atlas"/);
   assert.equal(manifest.name, "Ritual Atlas");
   assert.equal(manifest.display, "standalone");
-  assert.equal(manifest.icons.length, 2);
+  assert.deepEqual(
+    manifest.icons.map(({ src, sizes, purpose }) => ({ src, sizes, purpose })),
+    [
+      { src: "ritual-gate-icon-192.png", sizes: "192x192", purpose: "any" },
+      { src: "ritual-gate-icon-512.png", sizes: "512x512", purpose: "any" },
+      { src: "ritual-gate-maskable-192.png", sizes: "192x192", purpose: "maskable" },
+      { src: "ritual-gate-maskable-512.png", sizes: "512x512", purpose: "maskable" },
+    ],
+  );
   assert.match(storage, /const STATE_ENVELOPE_FORMAT = "ritual-atlas-state"/);
   assert.match(storage, /value\.format === STATE_ENVELOPE_FORMAT/);
   assert.match(storage, /Stored Ritual Atlas data is invalid/);
@@ -327,15 +337,19 @@ test("ships the complete local-first PWA surface", async () => {
   assert.match(serviceWorker, /key\.startsWith\(CACHE_PREFIX\)/);
   assert.match(serviceWorker, /fetchFresh/);
   assert.match(serviceWorker, /CARD_ART_INDEX/);
+  assert.match(serviceWorker, /ritual-gate-mark\.svg/);
+  assert.match(serviceWorker, /ritual-gate-maskable-512\.png/);
   assert.match(buildPages, /includes\("__RITUAL_ATLAS_RELEASE__"\)/);
   assert.match(buildPages, /replaceAll\("__RITUAL_ATLAS_RELEASE__", releaseId\)/);
   assert.match(verifyOffline, /Dual Aspect/);
   assert.match(verifyOffline, /savedOnDevice/);
+  assert.match(verifyOffline, /brand\/ritual-gate-mark\.svg/);
   assert.match(verifyOffline, /persistedDraft/);
   assert.match(verifyOffline, /hero-actions \.secondary-action/);
   assert.equal(packageJson.name, "ritual-atlas");
   assert.equal(packageJson.version, "1.0.0");
   assert.match(packageJson.scripts["verify:offline"], /--pages/);
+  assert.match(packageJson.scripts["brand:audit"], /--check/);
   assert.equal(packageJson.dependencies["react-loading-skeleton"], undefined);
   assert.equal(artIndex.format, "ritual-atlas-card-art");
   assert.equal(artIndex.count, 79);
@@ -343,14 +357,78 @@ test("ships the complete local-first PWA surface", async () => {
   assert.equal(new Set(artIndex.files).size, 79);
 
   await Promise.all([
-    access(new URL("public/icon-192.png", root)),
-    access(new URL("public/icon-512.png", root)),
-    access(new URL("public/apple-touch-icon.png", root)),
-    access(new URL("public/og.jpg", root)),
+    access(new URL("public/brand/ritual-gate-mark.svg", root)),
+    access(new URL("public/brand/ritual-gate-micro.svg", root)),
+    access(new URL("public/favicon.svg", root)),
+    access(new URL("public/ritual-gate-favicon.png", root)),
+    access(new URL("public/ritual-gate-icon-192.png", root)),
+    access(new URL("public/ritual-gate-icon-512.png", root)),
+    access(new URL("public/ritual-gate-maskable-192.png", root)),
+    access(new URL("public/ritual-gate-maskable-512.png", root)),
+    access(new URL("public/ritual-gate-apple-touch-icon.png", root)),
+    access(new URL("public/ritual-gate-og.jpg", root)),
     ...artIndex.files.map((file) => access(new URL(`public/art/cards/${file}`, root))),
   ]);
 
   await assert.rejects(access(new URL("app/_sites-preview", root)));
+});
+
+test("ships deterministic, opaque Ritual Gate brand assets with safe maskable artwork", async () => {
+  const pngAssets = [
+    ["ritual-gate-favicon.png", 64],
+    ["ritual-gate-apple-touch-icon.png", 180],
+    ["ritual-gate-icon-192.png", 192],
+    ["ritual-gate-icon-512.png", 512],
+    ["ritual-gate-maskable-192.png", 192],
+    ["ritual-gate-maskable-512.png", 512],
+  ];
+
+  for (const [file, size] of pngAssets) {
+    const asset = fileURLToPath(new URL(`../public/${file}`, import.meta.url));
+    const metadata = await sharp(asset).metadata();
+    assert.equal(metadata.format, "png", `${file} must be a PNG`);
+    assert.equal(metadata.width, size, `${file} width`);
+    assert.equal(metadata.height, size, `${file} height`);
+    const stats = await sharp(asset).ensureAlpha().stats();
+    assert.equal(stats.channels[3].min, 255, `${file} must be fully opaque`);
+  }
+
+  for (const file of ["ritual-gate-maskable-192.png", "ritual-gate-maskable-512.png"]) {
+    const asset = fileURLToPath(new URL(`../public/${file}`, import.meta.url));
+    const { data, info } = await sharp(asset)
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let importantPixels = 0;
+    let maximumRadius = 0;
+
+    for (let y = 0; y < info.height; y += 1) {
+      for (let x = 0; x < info.width; x += 1) {
+        const offset = (y * info.width + x) * info.channels;
+        const [red, green, blue] = data.subarray(offset, offset + 3);
+        if (red > 130 && green > 90 && blue < 165 && red - blue > 45) {
+          importantPixels += 1;
+          maximumRadius = Math.max(
+            maximumRadius,
+            Math.hypot(x + 0.5 - info.width / 2, y + 0.5 - info.height / 2),
+          );
+        }
+      }
+    }
+
+    assert.ok(importantPixels > info.width, `${file} must contain the gold mark`);
+    assert.ok(
+      maximumRadius <= info.width * 0.4 + 1,
+      `${file} artwork must remain inside the guaranteed maskable safe circle`,
+    );
+  }
+
+  const social = await sharp(
+    fileURLToPath(new URL("../public/ritual-gate-og.jpg", import.meta.url)),
+  ).metadata();
+  assert.equal(social.format, "jpeg");
+  assert.equal(social.width, 1600);
+  assert.equal(social.height, 840);
 });
 
 test("guards audited persistence, journal, spread, and security behavior", async () => {
@@ -459,6 +537,20 @@ test("prepares the complete 79-card library with fresh bounded cache writes", as
   );
   assert.ok(storedPaths.includes("/ritual-atlas/"));
   assert.ok(storedPaths.includes("/ritual-atlas/art/cards/index.json"));
+  for (const brandPath of [
+    "/ritual-atlas/favicon.svg",
+    "/ritual-atlas/ritual-gate-favicon.png",
+    "/ritual-atlas/ritual-gate-icon-192.png",
+    "/ritual-atlas/ritual-gate-icon-512.png",
+    "/ritual-atlas/ritual-gate-maskable-192.png",
+    "/ritual-atlas/ritual-gate-maskable-512.png",
+    "/ritual-atlas/ritual-gate-apple-touch-icon.png",
+    "/ritual-atlas/brand/ritual-gate-mark.svg",
+    "/ritual-atlas/brand/ritual-gate-micro.svg",
+    "/ritual-atlas/ritual-gate-og.jpg",
+  ]) {
+    assert.ok(storedPaths.includes(brandPath), `${brandPath} must be precached`);
+  }
   assert.ok(
     harness.fetchedRequests.every((request) => request.cache === "reload"),
     "every install fetch should bypass the browser HTTP cache",

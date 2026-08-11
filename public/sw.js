@@ -7,11 +7,16 @@ const withBase = (path) => `${APP_BASE}${path.startsWith("/") ? path : `/${path}
 const APP_ROOT = `${APP_BASE}/`;
 const CORE_ASSETS = [
   withBase("/manifest.webmanifest"),
-  withBase("/favicon.png"),
-  withBase("/icon-192.png"),
-  withBase("/icon-512.png"),
-  withBase("/apple-touch-icon.png"),
-  withBase("/og.jpg"),
+  withBase("/favicon.svg"),
+  withBase("/ritual-gate-favicon.png"),
+  withBase("/ritual-gate-icon-192.png"),
+  withBase("/ritual-gate-icon-512.png"),
+  withBase("/ritual-gate-maskable-192.png"),
+  withBase("/ritual-gate-maskable-512.png"),
+  withBase("/ritual-gate-apple-touch-icon.png"),
+  withBase("/brand/ritual-gate-mark.svg"),
+  withBase("/brand/ritual-gate-micro.svg"),
+  withBase("/ritual-gate-og.jpg"),
 ];
 
 const CARD_ART_INDEX = withBase("/art/cards/index.json");

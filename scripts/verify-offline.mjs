@@ -269,6 +269,7 @@ try {
       uncachedRequestFailed = true;
     }
     const cardResponse = await fetch(${JSON.stringify(pageBasePath + "/art/cards/major-21.webp")});
+    const brandResponse = await fetch(${JSON.stringify(pageBasePath + "/brand/ritual-gate-mark.svg")});
     const startButton = [...document.querySelectorAll("button")]
       .find((button) => button.textContent.includes("Start a Reading"));
     startButton?.click();
@@ -302,6 +303,8 @@ try {
       uncachedRequestFailed,
       cardStatus: cardResponse.status,
       cardBytes: (await cardResponse.arrayBuffer()).byteLength,
+      brandStatus: brandResponse.status,
+      brandBytes: (await brandResponse.arrayBuffer()).byteLength,
       nextHeading: document.querySelector("h1")?.textContent?.trim(),
       mixedSelected,
       savedOnDevice: [...document.querySelectorAll('[role="status"]')]
@@ -315,6 +318,8 @@ try {
     !offlineResult.uncachedRequestFailed ||
     offlineResult.cardStatus !== 200 ||
     offlineResult.cardBytes < 80_000 ||
+    offlineResult.brandStatus !== 200 ||
+    offlineResult.brandBytes < 500 ||
     offlineResult.nextHeading !== "Reading" ||
     !offlineResult.mixedSelected ||
     !offlineResult.savedOnDevice ||

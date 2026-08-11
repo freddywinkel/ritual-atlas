@@ -30,6 +30,7 @@ dark-haired traveler, fox, path, doorway or lone glowing tree.
 
 > Create a premium midnight-teal social preview for Ritual Atlas. Use the
 > approved original Three of Wands illustration as the right-side hero image,
-> balanced with champagne-gold route lines and spacious editorial typography.
+> balanced with the original Ritual Gate logo, champagne-gold route lines and
+> spacious editorial typography.
 > Include the exact title “Ritual Atlas”, the English/Dutch personal-journal
 > message, and no official deck branding or artist imitation.

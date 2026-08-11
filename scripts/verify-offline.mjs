@@ -302,10 +302,11 @@ try {
   await cdp.send("Page.reload");
   await persistedLoad;
   const persistedDraft = await evaluate(cdp, `(async () => {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const continueButton = [...document.querySelectorAll("button")]
-        .find((button) => button.textContent.includes("Continue draft"));
+    let continueFound = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const continueButton = document.querySelector(".hero-actions .secondary-action");
       if (continueButton) {
+        continueFound = true;
         continueButton.click();
         break;
       }
@@ -321,6 +322,11 @@ try {
       position: document.querySelector(".position-banner h2")?.textContent?.trim(),
       progress: document.querySelector(".reading-status-line [aria-label]")?.textContent?.trim(),
       hasSaveError: Boolean(document.querySelector(".notice--error")),
+      continueFound,
+      homeButtons: [...document.querySelectorAll("button")]
+        .map((button) => button.textContent.trim().replace(/\\s+/g, " "))
+        .filter(Boolean)
+        .slice(0, 12),
     };
   })()`);
 
@@ -329,7 +335,8 @@ try {
     persistedDraft.spread !== "Dual Aspect" ||
     persistedDraft.position !== "Tarot voice" ||
     persistedDraft.progress !== "0/3" ||
-    persistedDraft.hasSaveError
+    persistedDraft.hasSaveError ||
+    !persistedDraft.continueFound
   ) {
     throw new Error(`Persisted draft did not survive an offline reload: ${JSON.stringify(persistedDraft)}`);
   }

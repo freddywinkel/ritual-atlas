@@ -5,6 +5,19 @@ import "./globals.css";
 const siteOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN ?? "http://localhost:3000";
 const siteUrl = new URL(PUBLIC_BASE_PATH ? `${PUBLIC_BASE_PATH}/` : "/", siteOrigin);
 const socialImage = new URL(publicPath("/og.jpg"), siteOrigin).toString();
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+].join("; ");
 
 export const metadata: Metadata = {
   metadataBase: siteUrl,
@@ -66,6 +79,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta httpEquiv="Content-Security-Policy" content={contentSecurityPolicy} />
+        <meta name="referrer" content="no-referrer" />
+      </head>
       <body>{children}</body>
     </html>
   );

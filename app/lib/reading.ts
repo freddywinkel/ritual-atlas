@@ -25,7 +25,8 @@ export function createReading(
     cardId: null,
     orientation: "upright",
     role: "primary",
-    lensOverride: readingLens === "mixed" ? "combined" : null,
+    lensOverride:
+      readingLens === "mixed" ? position.defaultLens ?? "combined" : null,
     firstSeenAspect: null,
     firstImpression: "",
     interpretation: "",

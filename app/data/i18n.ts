@@ -15,6 +15,8 @@ const EN_COPY = {
   "language.dutch": "Nederlands",
   "language.systemDetected": "Chosen from your device language",
   "language.changeAnytime": "You can change this at any time.",
+  "language.switchToDutch": "Switch to Dutch",
+  "language.switchToEnglish": "Switch to English",
 
   "nav.home": "Home",
   "nav.newReading": "New Reading",
@@ -47,7 +49,7 @@ const EN_COPY = {
   "newReading.subtitle": "Set a simple frame before you draw from your physical deck.",
   "newReading.stepSpread": "1. Choose a Spread",
   "newReading.stepLens": "2. Choose a reading lens",
-  "newReading.stepIntention": "3. Add an intention",
+  "newReading.stepIntention": "Add an intention",
   "newReading.chooseSpread": "Choose a Spread",
   "newReading.chooseLens": "Choose a lens",
   "newReading.selectedSpread": "Selected Spread",
@@ -116,6 +118,7 @@ const EN_COPY = {
   "cardPicker.searchPlaceholder": "Search English or Dutch names",
   "cardPicker.searchHint": "Printed English titles remain visible in both languages.",
   "cardPicker.filterAll": "All cards",
+  "cardPicker.filterLabel": "Filter cards",
   "cardPicker.filterMajor": "Major Arcana",
   "cardPicker.filterMinor": "Minor Arcana",
   "cardPicker.filterSuit": "Suit",
@@ -132,12 +135,16 @@ const EN_COPY = {
   "cardPicker.clearSearch": "Clear search",
   "cardPicker.combinedOnly": "Combined lens only",
   "cardPicker.combinedOnlyBody": "This unique card does not have separate Prisma or Cosma parent-card lenses.",
+  "cardPicker.resultsOne": "1 matching card",
+  "cardPicker.resultsMany": "{count} matching cards",
+  "cardPicker.selectedAnnouncement": "Selected {card}.",
 
   "journal.title": "Journal",
   "journal.subtitle": "Every saved Reading, in one quiet place.",
   "journal.searchLabel": "Search Journal",
   "journal.searchPlaceholder": "Search questions, notes, cards, or tags",
   "journal.filterAll": "All Readings",
+  "journal.filterLabel": "Filter Journal readings",
   "journal.filterDrafts": "Drafts",
   "journal.filterComplete": "Completed",
   "journal.filterSpread": "Spread",
@@ -182,6 +189,8 @@ const EN_COPY = {
   "insights.cardsOneLabel": "card",
   "insights.cardsManyLabel": "cards",
   "insights.noData": "No data for this view yet.",
+  "insights.readingsOne": "1 Reading",
+  "insights.readingsMany": "{count} Readings",
   "insights.privateTitle": "Your patterns stay private",
   "insights.privateBody": "Insights are calculated on this device from your own Journal.",
   "insights.contextTitle": "A reflection aid",
@@ -240,7 +249,7 @@ const EN_COPY = {
   "settings.showEnglishCardNamesBody": "Keep the deck's printed English titles visible alongside Dutch names.",
   "settings.reducedMotionBody": "Stops gentle transition effects.",
   "settings.resetTitle": "Reset app",
-  "settings.resetBody": "Remove every Reading, custom Spread, tag, and setting from this device.",
+  "settings.resetBody": "Remove every Reading, reflection, tag, and setting from this device.",
 
   "importExport.title": "Backup and restore",
   "importExport.subtitle": "Keep an independent copy of your private Journal.",
@@ -269,7 +278,7 @@ const EN_COPY = {
   "importExport.mergeTitle": "Merge with this device",
   "importExport.mergeBody": "Add new items and keep existing items. Conflicts are never overwritten silently.",
   "importExport.replaceTitle": "Replace data on this device",
-  "importExport.replaceBody": "Create a safety backup, then replace all current app data.",
+  "importExport.replaceBody": "This replaces all current app data. Export a backup first if you may need the current Journal.",
   "importExport.conflictTitle": "An item already exists",
   "importExport.conflictBody": "Choose which version to keep.",
   "importExport.keepCurrent": "Keep current",
@@ -317,6 +326,7 @@ const EN_COPY = {
   "errors.offlineInstall": "Connect once to finish installing the offline app.",
   "errors.cardUnavailable": "That card is no longer available in this Reading.",
   "errors.tryAgain": "Try again. If the problem continues, export a backup before closing the app.",
+  "errors.staleData": "Ritual Atlas changed in another tab. Your unsaved change was not written; reload the latest Journal before continuing.",
 
   "actions.add": "Add",
   "actions.apply": "Apply",
@@ -330,6 +340,7 @@ const EN_COPY = {
   "actions.download": "Download",
   "actions.edit": "Edit",
   "actions.export": "Export",
+  "actions.exportUnsaved": "Export unsaved copy",
   "actions.finish": "Finish",
   "actions.import": "Import",
   "actions.learnMore": "Learn more",
@@ -349,6 +360,7 @@ const EN_COPY = {
   "actions.start": "Start",
   "actions.undo": "Undo",
   "actions.update": "Update",
+  "actions.reload": "Reload latest",
   "actions.upload": "Upload",
 
   "orientation.label": "Orientation",
@@ -399,6 +411,8 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "language.dutch": "Nederlands",
   "language.systemDetected": "Gekozen op basis van de taal van je apparaat",
   "language.changeAnytime": "Je kunt dit op elk moment wijzigen.",
+  "language.switchToDutch": "Schakel over naar Nederlands",
+  "language.switchToEnglish": "Schakel over naar Engels",
 
   "nav.home": "Home",
   "nav.newReading": "Nieuwe legging",
@@ -431,7 +445,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "newReading.subtitle": "Geef je vraag een eenvoudig kader voordat je uit je fysieke deck trekt.",
   "newReading.stepSpread": "1. Kies een legpatroon",
   "newReading.stepLens": "2. Kies een leeswijze",
-  "newReading.stepIntention": "3. Voeg een intentie toe",
+  "newReading.stepIntention": "Voeg een intentie toe",
   "newReading.chooseSpread": "Kies een legpatroon",
   "newReading.chooseLens": "Kies een leeswijze",
   "newReading.selectedSpread": "Gekozen legpatroon",
@@ -500,6 +514,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "cardPicker.searchPlaceholder": "Zoek op Engelse of Nederlandse naam",
   "cardPicker.searchHint": "De gedrukte Engelse titels blijven in beide talen zichtbaar.",
   "cardPicker.filterAll": "Alle kaarten",
+  "cardPicker.filterLabel": "Filter kaarten",
   "cardPicker.filterMajor": "Grote Arcana",
   "cardPicker.filterMinor": "Kleine Arcana",
   "cardPicker.filterSuit": "Kleur",
@@ -516,12 +531,16 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "cardPicker.clearSearch": "Wis zoekopdracht",
   "cardPicker.combinedOnly": "Alleen gecombineerde leeswijze",
   "cardPicker.combinedOnlyBody": "Deze unieke kaart heeft geen afzonderlijke Prisma- of Cosma-ouderkaart en kan daarom alleen als gecombineerde kaart worden gelezen.",
+  "cardPicker.resultsOne": "1 passende kaart",
+  "cardPicker.resultsMany": "{count} passende kaarten",
+  "cardPicker.selectedAnnouncement": "{card} geselecteerd.",
 
   "journal.title": "Dagboek",
   "journal.subtitle": "Elke opgeslagen legging op één rustige plek.",
   "journal.searchLabel": "Zoek in dagboek",
   "journal.searchPlaceholder": "Zoek in vragen, notities, kaarten of tags",
   "journal.filterAll": "Alle leggingen",
+  "journal.filterLabel": "Filter leggingen in het dagboek",
   "journal.filterDrafts": "Concepten",
   "journal.filterComplete": "Voltooid",
   "journal.filterSpread": "Legpatroon",
@@ -566,6 +585,8 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "insights.cardsOneLabel": "kaart",
   "insights.cardsManyLabel": "kaarten",
   "insights.noData": "Nog geen gegevens voor deze weergave.",
+  "insights.readingsOne": "1 legging",
+  "insights.readingsMany": "{count} leggingen",
   "insights.privateTitle": "Je patronen blijven privé",
   "insights.privateBody": "Inzichten worden op dit apparaat berekend uit je eigen dagboek.",
   "insights.contextTitle": "Een hulpmiddel voor reflectie",
@@ -624,7 +645,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "settings.showEnglishCardNamesBody": "Toon de gedrukte Engelse titels naast de Nederlandse namen.",
   "settings.reducedMotionBody": "Stopt zachte overgangseffecten.",
   "settings.resetTitle": "App opnieuw instellen",
-  "settings.resetBody": "Verwijder alle leggingen, eigen legpatronen, tags en instellingen van dit apparaat.",
+  "settings.resetBody": "Verwijder alle leggingen, reflecties, tags en instellingen van dit apparaat.",
 
   "importExport.title": "Back-up en herstel",
   "importExport.subtitle": "Bewaar een onafhankelijke kopie van je privédagboek.",
@@ -653,7 +674,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "importExport.mergeTitle": "Samenvoegen met dit apparaat",
   "importExport.mergeBody": "Voeg nieuwe items toe en behoud bestaande items. Conflicten worden nooit stilzwijgend overschreven.",
   "importExport.replaceTitle": "Vervang gegevens op dit apparaat",
-  "importExport.replaceBody": "Maak een veiligheidsback-up en vervang daarna alle huidige appgegevens.",
+  "importExport.replaceBody": "Hiermee vervang je alle huidige appgegevens. Exporteer eerst een back-up als je het huidige dagboek mogelijk nog nodig hebt.",
   "importExport.conflictTitle": "Er bestaat al een item",
   "importExport.conflictBody": "Kies welke versie je wilt behouden.",
   "importExport.keepCurrent": "Behoud huidige versie",
@@ -701,6 +722,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "errors.offlineInstall": "Maak eenmaal verbinding om de offline-app volledig te installeren.",
   "errors.cardUnavailable": "Die kaart is niet meer beschikbaar in deze legging.",
   "errors.tryAgain": "Probeer het opnieuw. Blijft het probleem bestaan, exporteer dan een back-up voordat je de app sluit.",
+  "errors.staleData": "Ritual Atlas is in een ander tabblad gewijzigd. Je niet-opgeslagen wijziging is niet bewaard; laad het nieuwste dagboek voordat je verdergaat.",
 
   "actions.add": "Toevoegen",
   "actions.apply": "Toepassen",
@@ -714,6 +736,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "actions.download": "Downloaden",
   "actions.edit": "Bewerken",
   "actions.export": "Exporteren",
+  "actions.exportUnsaved": "Exporteer niet-opgeslagen kopie",
   "actions.finish": "Voltooien",
   "actions.import": "Importeren",
   "actions.learnMore": "Meer informatie",
@@ -733,6 +756,7 @@ const NL_COPY: Record<UiCopyKey, string> = {
   "actions.start": "Starten",
   "actions.undo": "Ongedaan maken",
   "actions.update": "Bijwerken",
+  "actions.reload": "Laad nieuwste",
   "actions.upload": "Uploaden",
 
   "orientation.label": "Oriëntatie",
@@ -779,6 +803,7 @@ export interface SpreadTemplate {
     id: string;
     name: Readonly<Record<Language, string>>;
     prompt: Readonly<Record<Language, string>>;
+    defaultLens?: "combined" | "tarot" | "oracle";
   }[];
   isFreeform?: boolean;
 }
@@ -846,6 +871,7 @@ export const SPREAD_TEMPLATES = [
     positions: [
       {
         id: "tarot-voice",
+        defaultLens: "tarot",
         name: { en: "Tarot voice", nl: "Stem van Tarot" },
         prompt: {
           en: "What does the Prisma Tarot perspective bring into focus?",
@@ -854,6 +880,7 @@ export const SPREAD_TEMPLATES = [
       },
       {
         id: "oracle-voice",
+        defaultLens: "oracle",
         name: { en: "Oracle voice", nl: "Stem van het Orakel" },
         prompt: {
           en: "What does the Cosma Oracle perspective make room for?",
@@ -862,6 +889,7 @@ export const SPREAD_TEMPLATES = [
       },
       {
         id: "meeting-point",
+        defaultLens: "combined",
         name: { en: "Meeting point", nl: "Ontmoetingspunt" },
         prompt: {
           en: "What becomes visible when both perspectives are held together?",

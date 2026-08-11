@@ -1,8 +1,10 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   mkdir,
   readFile,
+  readdir,
   rename,
   rm,
   writeFile,
@@ -49,8 +51,10 @@ await new Promise((resolve, reject) => {
       return;
     }
 
-    // vinext 1.0.0-beta.2 currently trips a Windows libuv assertion after a
-    // successful static export. Accept it only when the expected export exists.
+    // Vinext currently trips a Windows libuv assertion after some successful
+    // static exports. The whole dist directory was removed immediately before
+    // this build, so a new index.html proves this invocation produced output.
+    // CI runs on Linux and never accepts a nonzero build exit.
     if (process.platform === "win32") {
       try {
         await access(path.join(clientDirectory, "index.html"));
@@ -85,6 +89,39 @@ if (basePath) {
 
 await mkdir(clientDirectory, { recursive: true });
 await writeFile(path.join(clientDirectory, ".nojekyll"), "", "utf8");
+await rm(path.join(clientDirectory, "_headers"), { force: true });
+
+async function listReleaseFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const absolutePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return listReleaseFiles(absolutePath);
+      return [absolutePath];
+    }),
+  );
+  return files.flat();
+}
+
+const releaseFiles = (await listReleaseFiles(clientDirectory)).sort((a, b) =>
+  a.localeCompare(b),
+);
+const releaseHash = createHash("sha256");
+for (const file of releaseFiles) {
+  releaseHash.update(path.relative(clientDirectory, file).replaceAll(path.sep, "/"));
+  releaseHash.update(await readFile(file));
+}
+const releaseId = releaseHash.digest("hex").slice(0, 16);
+const serviceWorkerPath = path.join(clientDirectory, "sw.js");
+const serviceWorkerSource = await readFile(serviceWorkerPath, "utf8");
+if (!serviceWorkerSource.includes("__RITUAL_ATLAS_RELEASE__")) {
+  throw new Error("The service worker is missing its release placeholder.");
+}
+await writeFile(
+  serviceWorkerPath,
+  serviceWorkerSource.replaceAll("__RITUAL_ATLAS_RELEASE__", releaseId),
+  "utf8",
+);
 
 const [html, artIndexText] = await Promise.all([
   readFile(path.join(clientDirectory, "index.html"), "utf8"),
@@ -112,5 +149,5 @@ await Promise.all([
 ]);
 
 console.log(
-  `GitHub Pages export ready at dist/client${basePath ? ` for ${basePath}/` : ""}.`,
+  `GitHub Pages export ready at dist/client${basePath ? ` for ${basePath}/` : ""} (release ${releaseId}).`,
 );

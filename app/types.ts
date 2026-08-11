@@ -14,6 +14,7 @@ export interface SpreadPositionSnapshot {
   id: string;
   name: Record<Language, string>;
   prompt: Record<Language, string>;
+  defaultLens?: Exclude<ReadingLens, "mixed">;
   x?: number;
   y?: number;
 }

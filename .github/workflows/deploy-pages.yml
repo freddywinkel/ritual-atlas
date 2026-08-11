@@ -6,10 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -20,14 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Configure GitHub Pages
-        id: pages
-        uses: actions/configure-pages@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
           cache: npm
@@ -41,27 +34,33 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test
-
       - name: Build GitHub Pages artifact
         run: npm run build:pages
         env:
-          PAGES_BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          PAGES_ORIGIN: ${{ steps.pages.outputs.origin }}
+          PAGES_BASE_PATH: /${{ github.event.repository.name }}
+          PAGES_ORIGIN: https://${{ github.repository_owner }}.github.io
+
+      - name: Test
+        run: npm run test:unit
+
+      - name: Verify installed and offline Pages artifact
+        run: node scripts/verify-offline.mjs --pages
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist/client
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5

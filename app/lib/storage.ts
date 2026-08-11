@@ -6,6 +6,36 @@ const DATABASE_VERSION = 1;
 const STORE_NAME = "app-state";
 const STATE_KEY = "current";
 const VALID_CARD_IDS = new Set(CARDS.map((card) => card.id));
+const COMBINED_ONLY_CARD_IDS = new Set(
+  CARDS.filter((card) => card.combinedOnly).map((card) => card.id),
+);
+const STATE_ENVELOPE_FORMAT = "ritual-atlas-state";
+
+interface StateEnvelope {
+  format: typeof STATE_ENVELOPE_FORMAT;
+  schemaVersion: 1;
+  revision: number;
+  state: AppState;
+}
+
+export interface StateSnapshot {
+  state: AppState;
+  revision: number;
+}
+
+export class StateConflictError extends Error {
+  readonly expectedRevision: number;
+  readonly actualRevision: number;
+
+  constructor(expectedRevision: number, actualRevision: number) {
+    super(
+      `Local data changed in another tab (expected revision ${expectedRevision}, found ${actualRevision}).`,
+    );
+    this.name = "StateConflictError";
+    this.expectedRevision = expectedRevision;
+    this.actualRevision = actualRevision;
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -15,11 +45,77 @@ function isLocalizedText(value: unknown): boolean {
   return isRecord(value) && typeof value.en === "string" && typeof value.nl === "string";
 }
 
-function isValidDateString(value: unknown): value is string {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
 }
 
-function isReading(value: unknown): boolean {
+function isValidIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/,
+  );
+  if (!match) return false;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, zone] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  if (
+    !isValidCalendarDate(year, month, day) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    return false;
+  }
+
+  if (zone !== "Z") {
+    const offsetHour = Number(zone.slice(1, 3));
+    const offsetMinute = Number(zone.slice(4, 6));
+    if (offsetHour > 23 || offsetMinute > 59) return false;
+  }
+
+  return Number.isFinite(Date.parse(value));
+}
+
+function isValidDateOnly(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return (
+    match !== null &&
+    isValidCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]))
+  );
+}
+
+function hasFiniteOptionalNumber(record: Record<string, unknown>, key: string): boolean {
+  return (
+    !(key in record) ||
+    record[key] === undefined ||
+    (typeof record[key] === "number" && Number.isFinite(record[key]))
+  );
+}
+
+function isFreeformPosition(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.x === "number" &&
+    Number.isFinite(value.x) &&
+    typeof value.y === "number" &&
+    Number.isFinite(value.y) &&
+    typeof value.rotation === "number" &&
+    Number.isFinite(value.rotation) &&
+    typeof value.scale === "number" &&
+    Number.isFinite(value.scale)
+  );
+}
+
+function isReading(value: unknown, allowIncompleteComplete = false): boolean {
   if (!isRecord(value) || !isRecord(value.spreadSnapshot)) return false;
   const spread = value.spreadSnapshot;
   if (!Array.isArray(spread.positions) || !Array.isArray(value.pulls)) return false;
@@ -28,14 +124,27 @@ function isReading(value: unknown): boolean {
     (position) =>
       isRecord(position) &&
       typeof position.id === "string" &&
+      position.id.trim().length > 0 &&
       isLocalizedText(position.name) &&
-      isLocalizedText(position.prompt),
+      isLocalizedText(position.prompt) &&
+      hasFiniteOptionalNumber(position, "x") &&
+      hasFiniteOptionalNumber(position, "y") &&
+      (!("defaultLens" in position) ||
+        position.defaultLens === undefined ||
+        position.defaultLens === "combined" ||
+        position.defaultLens === "tarot" ||
+        position.defaultLens === "oracle"),
   );
+  const positionIds = spread.positions
+    .filter(isRecord)
+    .map((position) => position.id)
+    .filter((id): id is string => typeof id === "string");
   const pullsAreValid = value.pulls.every(
-    (pull) =>
+    (pull, index) =>
       isRecord(pull) &&
       typeof pull.slotId === "string" &&
-      Number.isInteger(pull.order) &&
+      pull.slotId === positionIds[index] &&
+      pull.order === index &&
       (pull.cardId === null ||
         (typeof pull.cardId === "string" && VALID_CARD_IDS.has(pull.cardId))) &&
       (pull.orientation === "upright" || pull.orientation === "reversed") &&
@@ -50,7 +159,14 @@ function isReading(value: unknown): boolean {
         pull.firstSeenAspect === "both" ||
         pull.firstSeenAspect === "unclear") &&
       typeof pull.firstImpression === "string" &&
-      typeof pull.interpretation === "string",
+      typeof pull.interpretation === "string" &&
+      (!("freeformPosition" in pull) ||
+        pull.freeformPosition === undefined ||
+        isFreeformPosition(pull.freeformPosition)) &&
+      (typeof pull.cardId !== "string" ||
+        !COMBINED_ONLY_CARD_IDS.has(pull.cardId) ||
+        ((pull.lensOverride === null || pull.lensOverride === "combined") &&
+          pull.firstSeenAspect === null)),
   );
   const reflectionsAreValid =
     Array.isArray(value.laterReflections) &&
@@ -58,16 +174,23 @@ function isReading(value: unknown): boolean {
       (reflection) =>
         isRecord(reflection) &&
         typeof reflection.id === "string" &&
-        isValidDateString(reflection.createdAt) &&
+        reflection.id.trim().length > 0 &&
+        isValidIsoTimestamp(reflection.createdAt) &&
         typeof reflection.text === "string",
     );
+  const reflectionIds = Array.isArray(value.laterReflections)
+    ? value.laterReflections
+        .filter(isRecord)
+        .map((reflection) => reflection.id)
+        .filter((id): id is string => typeof id === "string")
+    : [];
 
   return (
     value.schemaVersion === 1 &&
     typeof value.id === "string" &&
-    isValidDateString(value.createdAt) &&
-    isValidDateString(value.updatedAt) &&
-    isValidDateString(value.performedAt) &&
+    isValidIsoTimestamp(value.createdAt) &&
+    isValidIsoTimestamp(value.updatedAt) &&
+    isValidIsoTimestamp(value.performedAt) &&
     typeof value.timezone === "string" &&
     (value.status === "draft" || value.status === "complete") &&
     (value.readingLens === "combined" ||
@@ -77,18 +200,27 @@ function isReading(value: unknown): boolean {
     typeof value.question === "string" &&
     typeof spread.id === "string" &&
     isLocalizedText(spread.name) &&
+    (!("isFreeform" in spread) ||
+      spread.isFreeform === undefined ||
+      typeof spread.isFreeform === "boolean") &&
     positionsAreValid &&
+    positionIds.length === spread.positions.length &&
+    new Set(positionIds).size === positionIds.length &&
     pullsAreValid &&
     spread.positions.length === value.pulls.length &&
+    (allowIncompleteComplete || value.status !== "complete" ||
+      (value.pulls.length > 0 &&
+        value.pulls.every((pull) => isRecord(pull) && typeof pull.cardId === "string"))) &&
     Array.isArray(value.tags) &&
     value.tags.every((tag) => typeof tag === "string") &&
     typeof value.initialReflection === "string" &&
     reflectionsAreValid &&
-    (value.revisitDate === null || isValidDateString(value.revisitDate))
+    new Set(reflectionIds).size === reflectionIds.length &&
+    (value.revisitDate === null || isValidDateOnly(value.revisitDate))
   );
 }
 
-function isAppState(value: unknown): value is AppState {
+function isAppState(value: unknown, allowLegacyIncompleteComplete = false): value is AppState {
   if (!isRecord(value) || !isRecord(value.settings) || !Array.isArray(value.readings)) {
     return false;
   }
@@ -111,10 +243,57 @@ function isAppState(value: unknown): value is AppState {
     (value.settings.language === "en" || value.settings.language === "nl") &&
     typeof value.settings.reducedMotion === "boolean" &&
     typeof value.settings.showEnglishCardNamesInDutch === "boolean" &&
-    value.readings.every(isReading) &&
+    value.readings.every((reading) => isReading(reading, allowLegacyIncompleteComplete)) &&
     new Set(readingIds).size === value.readings.length &&
-    activeDraftIsValid
+    (activeDraftIsValid ||
+      (allowLegacyIncompleteComplete &&
+        (value.activeDraftId === null || typeof value.activeDraftId === "string")))
   );
+}
+
+function normalizeLegacyState(value: unknown): AppState | null {
+  if (!isAppState(value, true)) return null;
+  const readings = value.readings.map((reading) =>
+    reading.status === "complete" && reading.pulls.some((pull) => pull.cardId === null)
+      ? { ...reading, status: "draft" as const }
+      : reading,
+  );
+  const activeDraftId = readings.some(
+    (reading) => reading.id === value.activeDraftId && reading.status === "draft",
+  )
+    ? value.activeDraftId
+    : (readings.find((reading) => reading.status === "draft")?.id ?? null);
+  const normalized: AppState = { ...value, readings, activeDraftId };
+  return isAppState(normalized) ? normalized : null;
+}
+
+function isStateEnvelope(value: unknown): value is StateEnvelope {
+  return (
+    isRecord(value) &&
+    value.format === STATE_ENVELOPE_FORMAT &&
+    value.schemaVersion === 1 &&
+    Number.isSafeInteger(value.revision) &&
+    typeof value.revision === "number" &&
+    value.revision > 0 &&
+    isAppState(value.state)
+  );
+}
+
+function decodeStoredState(value: unknown): StateSnapshot {
+  if (value === undefined) {
+    return { state: createInitialState(), revision: 0 };
+  }
+  if (isAppState(value)) {
+    return { state: value, revision: 0 };
+  }
+  const normalizedLegacyState = normalizeLegacyState(value);
+  if (normalizedLegacyState) {
+    return { state: normalizedLegacyState, revision: 0 };
+  }
+  if (isStateEnvelope(value)) {
+    return { state: value.state, revision: value.revision };
+  }
+  throw new Error("Stored Ritual Atlas data is invalid.");
 }
 
 function preferredLanguage(): Language {
@@ -155,38 +334,113 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export async function loadState(): Promise<AppState> {
+export async function loadStateSnapshot(): Promise<StateSnapshot> {
   const database = await openDatabase();
   try {
-    return await new Promise<AppState>((resolve, reject) => {
+    return await new Promise<StateSnapshot>((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, "readonly");
       const request = transaction.objectStore(STORE_NAME).get(STATE_KEY);
+      let snapshot: StateSnapshot | null = null;
+      let pendingError: Error | null = null;
       request.onsuccess = () => {
-        const stored: unknown = request.result;
-        if (stored === undefined) {
-          resolve(createInitialState());
-        } else if (isAppState(stored)) {
-          resolve(stored);
-        } else {
-          reject(new Error("Stored Ritual Atlas data is invalid."));
+        try {
+          snapshot = decodeStoredState(request.result);
+        } catch (error) {
+          pendingError = error instanceof Error ? error : new Error(String(error));
+          transaction.abort();
         }
       };
-      request.onerror = () => reject(request.error ?? new Error("Unable to read local data."));
+      request.onerror = () => {
+        pendingError = request.error ?? new Error("Unable to read local data.");
+      };
+      transaction.oncomplete = () => {
+        if (snapshot) resolve(snapshot);
+        else reject(pendingError ?? new Error("Local data was not read."));
+      };
+      transaction.onerror = () =>
+        reject(pendingError ?? transaction.error ?? new Error("Unable to read local data."));
+      transaction.onabort = () =>
+        reject(
+          pendingError ?? transaction.error ?? new Error("Reading local data was cancelled."),
+        );
     });
   } finally {
     database.close();
   }
 }
 
-export async function saveState(state: AppState): Promise<void> {
+export async function loadState(): Promise<AppState> {
+  return (await loadStateSnapshot()).state;
+}
+
+export async function saveState(
+  state: AppState,
+  expectedRevision?: number,
+): Promise<number> {
+  if (!isAppState(state)) {
+    throw new Error("Ritual Atlas data is invalid and was not saved.");
+  }
+  if (
+    expectedRevision !== undefined &&
+    (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
+  ) {
+    throw new TypeError("The expected local-data revision must be a non-negative integer.");
+  }
+
   const database = await openDatabase();
   try {
-    await new Promise<void>((resolve, reject) => {
+    return await new Promise<number>((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, "readwrite");
-      transaction.objectStore(STORE_NAME).put(state, STATE_KEY);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error("Unable to save local data."));
-      transaction.onabort = () => reject(transaction.error ?? new Error("Local save was cancelled."));
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.get(STATE_KEY);
+      let nextRevision: number | null = null;
+      let pendingError: Error | null = null;
+
+      request.onsuccess = () => {
+        let current: StateSnapshot;
+        try {
+          current = decodeStoredState(request.result);
+        } catch (error) {
+          pendingError = error instanceof Error ? error : new Error(String(error));
+          transaction.abort();
+          return;
+        }
+
+        if (expectedRevision !== undefined && current.revision !== expectedRevision) {
+          pendingError = new StateConflictError(expectedRevision, current.revision);
+          transaction.abort();
+          return;
+        }
+
+        if (current.revision === Number.MAX_SAFE_INTEGER) {
+          pendingError = new Error("The local-data revision limit was reached.");
+          transaction.abort();
+          return;
+        }
+
+        nextRevision = current.revision + 1;
+        const envelope: StateEnvelope = {
+          format: STATE_ENVELOPE_FORMAT,
+          schemaVersion: 1,
+          revision: nextRevision,
+          state,
+        };
+        store.put(envelope, STATE_KEY);
+      };
+      request.onerror = () => {
+        pendingError = request.error ?? new Error("Unable to read current local data.");
+      };
+      transaction.oncomplete = () => {
+        if (nextRevision === null) {
+          reject(new Error("Local data was not saved."));
+        } else {
+          resolve(nextRevision);
+        }
+      };
+      transaction.onerror = () =>
+        reject(pendingError ?? transaction.error ?? new Error("Unable to save local data."));
+      transaction.onabort = () =>
+        reject(pendingError ?? transaction.error ?? new Error("Local save was cancelled."));
     });
   } finally {
     database.close();
@@ -198,7 +452,7 @@ export function makeBackup(state: AppState): BackupPayload {
     format: "ritual-atlas-backup",
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    appVersion: "0.1.0",
+    appVersion: "1.0.0",
     state,
   };
 }
@@ -209,7 +463,7 @@ export function parseBackup(text: string): BackupPayload {
     !isRecord(value) ||
     value.format !== "ritual-atlas-backup" ||
     value.schemaVersion !== 1 ||
-    !isValidDateString(value.exportedAt) ||
+    !isValidIsoTimestamp(value.exportedAt) ||
     typeof value.appVersion !== "string" ||
     !isAppState(value.state)
   ) {
@@ -232,6 +486,8 @@ export async function clearStoredState(): Promise<void> {
       transaction.objectStore(STORE_NAME).delete(STATE_KEY);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error ?? new Error("Unable to clear local data."));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Clearing local data was cancelled."));
     });
   } finally {
     database.close();

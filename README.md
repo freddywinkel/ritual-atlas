@@ -19,6 +19,7 @@ guidebook.
 - upright/reversed orientation, first-seen aspect, notes, reflections, and tags
 - drafts, a searchable journal, and personal pattern insights
 - IndexedDB storage that stays in this browser profile
+- revision-safe multi-tab storage with an explicit conflict warning
 - versioned JSON backup and restore
 - an installable manifest and offline service worker
 - English and Dutch UI copy
@@ -60,11 +61,12 @@ npm.cmd run art:audit
 npm.cmd run verify:offline
 ```
 
-`npm.cmd test` performs a production build and then checks the rendered app
-shell and packaged PWA assets. `verify:offline` installs the production service
+`npm.cmd test` performs the GitHub Pages static export and then checks the
+rendered app shell, storage invariants, packaged PWA assets, and service-worker
+failure paths. `verify:offline` installs the production service
 worker in a temporary headless-Chrome profile, confirms all 79 card files are
-cached, stops the server, reloads the app, opens a new Reading, and fetches a
-card image without network access.
+cached, stops the server, fetches a card image without network access, creates
+and autosaves a Dual Aspect draft, reloads offline, and reopens that exact draft.
 
 ## Artwork pipeline
 
@@ -96,7 +98,10 @@ The production PWA is published at:
 
 <https://freddywinkel.github.io/ritual-atlas/>
 
-Pushes to `main` run the type-check, lint, tests, static export, and GitHub Pages
-deployment workflow. The Pages build uses `/ritual-atlas/` as its public asset
-path and deploys only `dist/client`; source artwork, review artifacts, local
-storage, and development output remain excluded.
+Pushes to `main` run the type-check, lint, tests, static export, installed/offline
+browser verification, and GitHub Pages deployment workflow. Each export gives
+the service worker a content-derived release ID and stages a complete fresh
+cache before removing older Ritual Atlas caches. The Pages build uses
+`/ritual-atlas/` as its public asset path and deploys only `dist/client`; source
+artwork, review artifacts, local storage, and development output remain
+excluded.

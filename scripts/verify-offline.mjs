@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -9,12 +9,33 @@ const appPort = 3010;
 const pagesMode = process.argv.includes("--pages");
 const pageBasePath = pagesMode ? "/ritual-atlas" : "";
 const appUrl = `http://127.0.0.1:${appPort}${pageBasePath}/`;
-const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const profileDirectory = await mkdtemp(path.join(os.tmpdir(), "ritual-atlas-offline-"));
 let server;
 let chrome;
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function findChromePath() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Keep looking for an installed Chromium-based browser.
+    }
+  }
+  throw new Error("Chrome or Chromium was not found. Set CHROME_PATH to run offline verification.");
+}
 
 async function assertPortAvailable(port) {
   await new Promise((resolve, reject) => {
@@ -131,21 +152,28 @@ try {
       },
     );
   } else {
-    const command = process.env.ComSpec ?? "C:\\Windows\\System32\\cmd.exe";
-    server = spawn(command, ["/d", "/s", "/c", `npm.cmd run start -- --port ${appPort}`], {
-      cwd: projectRoot,
-      windowsHide: true,
-      stdio: "ignore",
-    });
+    server = process.platform === "win32"
+      ? spawn(
+          process.env.ComSpec ?? "C:\\Windows\\System32\\cmd.exe",
+          ["/d", "/s", "/c", `npm.cmd run start -- --port ${appPort}`],
+          { cwd: projectRoot, windowsHide: true, stdio: "ignore" },
+        )
+      : spawn("npm", ["run", "start", "--", "--port", String(appPort)], {
+          cwd: projectRoot,
+          stdio: "ignore",
+        });
   }
   await poll(async () => {
     const response = await fetch(appUrl);
     if (!response.ok) throw new Error(`Local production server returned ${response.status}.`);
   });
 
+  const chromePath = await findChromePath();
   chrome = spawn(chromePath, [
     "--headless=new",
     "--disable-gpu",
+    "--disable-dev-shm-usage",
+    ...(process.platform === "linux" ? ["--no-sandbox"] : []),
     "--no-first-run",
     "--no-default-browser-check",
     `--remote-debugging-port=${debugPort}`,
@@ -172,16 +200,25 @@ try {
       navigator.serviceWorker.ready,
       new Promise((_, reject) => setTimeout(() => reject(new Error("service worker timeout")), 60000)),
     ]);
-    const cache = await caches.open("ritual-atlas-v6");
+    const scope = ${JSON.stringify(pageBasePath)}.replace(/^\\/+/, "").replace(/[^a-z0-9-]+/gi, "-") || "root";
+    const prefix = "ritual-atlas-" + scope + "-";
+    const cacheNames = (await caches.keys()).filter((name) => name.startsWith(prefix));
+    if (cacheNames.length !== 1) throw new Error("expected one active cache, found " + cacheNames.length);
+    const cache = await caches.open(cacheNames[0]);
     const keys = await cache.keys();
     return {
+      cacheName: cacheNames[0],
       controller: Boolean(navigator.serviceWorker.controller),
       cacheEntries: keys.length,
       cachedCards: keys.filter((request) => request.url.includes("/art/cards/") && request.url.endsWith(".webp")).length,
     };
   })()`);
 
-  if (!installed.controller || installed.cachedCards !== 79) {
+  if (
+    !installed.controller ||
+    installed.cachedCards !== 79 ||
+    (pagesMode && installed.cacheName.includes("__RITUAL_ATLAS_RELEASE__"))
+  ) {
     throw new Error(`Offline installation was incomplete: ${JSON.stringify(installed)}`);
   }
 
@@ -216,6 +253,26 @@ try {
       if (document.querySelector("h1")?.textContent?.trim() === "New Reading") break;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    const dualAspectButton = [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Dual Aspect"));
+    dualAspectButton?.click();
+    let mixedSelected = false;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const mixedButton = [...document.querySelectorAll("button")]
+        .find((button) => button.textContent.trim().startsWith("Mixed"));
+      mixedSelected = mixedButton?.getAttribute("aria-pressed") === "true";
+      if (mixedSelected) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    const beginButton = [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Begin Reading"));
+    beginButton?.click();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const saved = [...document.querySelectorAll('[role="status"]')]
+        .some((status) => status.textContent.includes("Saved on this device"));
+      if (document.querySelector("h1")?.textContent?.trim() === "Reading" && saved) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     return {
       title: document.title,
       navigatorOnline: navigator.onLine,
@@ -223,6 +280,9 @@ try {
       cardStatus: cardResponse.status,
       cardBytes: (await cardResponse.arrayBuffer()).byteLength,
       nextHeading: document.querySelector("h1")?.textContent?.trim(),
+      mixedSelected,
+      savedOnDevice: [...document.querySelectorAll('[role="status"]')]
+        .some((status) => status.textContent.includes("Saved on this device")),
     };
   })()`);
 
@@ -231,12 +291,50 @@ try {
     !offlineResult.uncachedRequestFailed ||
     offlineResult.cardStatus !== 200 ||
     offlineResult.cardBytes < 80_000 ||
-    offlineResult.nextHeading !== "New Reading"
+    offlineResult.nextHeading !== "Reading" ||
+    !offlineResult.mixedSelected ||
+    !offlineResult.savedOnDevice
   ) {
     throw new Error(`Offline interaction failed: ${JSON.stringify(offlineResult)}`);
   }
 
-  console.log({ installed, offlineResult });
+  const persistedLoad = cdp.waitForEvent("Page.loadEventFired");
+  await cdp.send("Page.reload");
+  await persistedLoad;
+  const persistedDraft = await evaluate(cdp, `(async () => {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const continueButton = [...document.querySelectorAll("button")]
+        .find((button) => button.textContent.includes("Continue draft"));
+      if (continueButton) {
+        continueButton.click();
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      if (document.querySelector("h1")?.textContent?.trim() === "Reading") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return {
+      heading: document.querySelector("h1")?.textContent?.trim(),
+      spread: document.querySelector(".reading-topbar .eyebrow")?.textContent?.trim(),
+      position: document.querySelector(".position-banner h2")?.textContent?.trim(),
+      progress: document.querySelector(".reading-status-line [aria-label]")?.textContent?.trim(),
+      hasSaveError: Boolean(document.querySelector(".notice--error")),
+    };
+  })()`);
+
+  if (
+    persistedDraft.heading !== "Reading" ||
+    persistedDraft.spread !== "Dual Aspect" ||
+    persistedDraft.position !== "Tarot voice" ||
+    persistedDraft.progress !== "0/3" ||
+    persistedDraft.hasSaveError
+  ) {
+    throw new Error(`Persisted draft did not survive an offline reload: ${JSON.stringify(persistedDraft)}`);
+  }
+
+  console.log({ installed, offlineResult, persistedDraft });
   cdp.close();
 } finally {
   stopProcessTree(chrome);

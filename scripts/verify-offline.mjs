@@ -137,6 +137,54 @@ async function evaluate(cdp, expression) {
   return result.result.value;
 }
 
+function touchPoint(x, y) {
+  return {
+    x,
+    y,
+    radiusX: 1,
+    radiusY: 1,
+    rotationAngle: 0,
+    force: 1,
+    id: 0,
+  };
+}
+
+async function dispatchTouchSwipe(cdp, { startX, startY, endX, endY, steps = 12 }) {
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [touchPoint(startX, startY)],
+  });
+  for (let step = 1; step <= steps; step += 1) {
+    const progress = step / steps;
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [touchPoint(
+        startX + (endX - startX) * progress,
+        startY + (endY - startY) * progress,
+      )],
+    });
+    await wait(16);
+  }
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await wait(400);
+}
+
+async function dispatchTouchTap(cdp, { x, y }) {
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [touchPoint(x, y)],
+  });
+  await wait(40);
+  await cdp.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await wait(250);
+}
+
 try {
   await assertPortAvailable(appPort);
   const debugPort = await findAvailablePort(9231);
@@ -454,7 +502,275 @@ try {
     throw new Error(`Persisted draft did not survive an offline reload: ${JSON.stringify(persistedDraft)}`);
   }
 
-  console.log({ installed, offlineResult, persistedDraft });
+  await Promise.all([
+    cdp.send("Emulation.setDeviceMetricsOverride", {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+      screenOrientation: { angle: 0, type: "portraitPrimary" },
+    }),
+    cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 }),
+  ]);
+
+  const touchSetup = await evaluate(cdp, `(async () => {
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+    const waitForHeading = async (expected) => {
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (document.querySelector("h1")?.textContent?.trim() === expected) return;
+        await wait(50);
+      }
+      throw new Error("Timed out waiting for " + expected);
+    };
+
+    document.querySelector(".reading-topbar .icon-button")?.click();
+    await waitForHeading("What would you like to explore?");
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Start a Reading"))?.click();
+    await waitForHeading("New Reading");
+    return {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      touchPoints: navigator.maxTouchPoints,
+      heading: document.querySelector("h1")?.textContent?.trim(),
+    };
+  })()`);
+
+  if (
+    touchSetup.width !== 390 ||
+    touchSetup.height !== 844 ||
+    touchSetup.touchPoints < 1 ||
+    touchSetup.heading !== "New Reading"
+  ) {
+    throw new Error(`Touch emulation was not configured: ${JSON.stringify(touchSetup)}`);
+  }
+
+  const spreadBeforeSwipe = await evaluate(cdp, `(async () => {
+    const target = [...document.querySelectorAll(".spread-choice")]
+      .find((button) => button.querySelector("strong")?.textContent?.trim() === "Panorama");
+    if (!target || target.getAttribute("aria-pressed") !== "false") {
+      throw new Error("Expected Panorama to be an unselected spread target.");
+    }
+    const absoluteTop = target.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, absoluteTop - 480), behavior: "auto" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = target.getBoundingClientRect();
+    return {
+      scrollY: window.scrollY,
+      maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
+      selected: document.querySelector('.spread-choice[aria-pressed="true"] strong')?.textContent?.trim(),
+      states: [...document.querySelectorAll(".spread-choice")]
+        .map((button) => button.getAttribute("aria-pressed")),
+      targetPressed: target.getAttribute("aria-pressed"),
+      startX: rect.left + rect.width / 2,
+      startY: Math.min(rect.bottom - 24, 760),
+      endX: rect.left + rect.width / 2,
+      endY: Math.max(80, Math.min(rect.bottom - 24, 760) - 260),
+    };
+  })()`);
+
+  await dispatchTouchSwipe(cdp, spreadBeforeSwipe);
+  const spreadAfterSwipe = await evaluate(cdp, `({
+    scrollY: window.scrollY,
+    selected: document.querySelector('.spread-choice[aria-pressed="true"] strong')?.textContent?.trim(),
+    states: [...document.querySelectorAll(".spread-choice")]
+      .map((button) => button.getAttribute("aria-pressed")),
+    targetPressed: [...document.querySelectorAll(".spread-choice")]
+      .find((button) => button.querySelector("strong")?.textContent?.trim() === "Panorama")
+      ?.getAttribute("aria-pressed"),
+  })`);
+
+  if (
+    spreadBeforeSwipe.maxScrollY <= spreadBeforeSwipe.scrollY ||
+    spreadAfterSwipe.scrollY < spreadBeforeSwipe.scrollY + 40 ||
+    spreadAfterSwipe.selected !== spreadBeforeSwipe.selected ||
+    JSON.stringify(spreadAfterSwipe.states) !== JSON.stringify(spreadBeforeSwipe.states) ||
+    spreadAfterSwipe.targetPressed !== "false"
+  ) {
+    throw new Error(`Spread touch scroll failed: ${JSON.stringify({ spreadBeforeSwipe, spreadAfterSwipe })}`);
+  }
+
+  const panoramaTapTarget = await evaluate(cdp, `(async () => {
+    const target = [...document.querySelectorAll(".spread-choice")]
+      .find((button) => button.querySelector("strong")?.textContent?.trim() === "Panorama");
+    if (!target) throw new Error("Panorama spread was not found.");
+    const absoluteTop = target.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, absoluteTop - 260), behavior: "auto" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = target.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  })()`);
+  await dispatchTouchTap(cdp, panoramaTapTarget);
+  const panoramaTapped = await evaluate(cdp, `({
+    selected: document.querySelector('.spread-choice[aria-pressed="true"] strong')?.textContent?.trim(),
+    pressed: [...document.querySelectorAll(".spread-choice")]
+      .find((button) => button.querySelector("strong")?.textContent?.trim() === "Panorama")
+      ?.getAttribute("aria-pressed"),
+  })`);
+  if (panoramaTapped.selected !== "Panorama" || panoramaTapped.pressed !== "true") {
+    throw new Error(`Touch tap did not activate the intended spread: ${JSON.stringify(panoramaTapped)}`);
+  }
+
+  const readingReady = await evaluate(cdp, `(async () => {
+    const beginButton = [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Begin Reading"));
+    beginButton?.click();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const positions = document.querySelectorAll(".position-map button").length;
+      if (document.querySelector("h1")?.textContent?.trim() === "Reading" && positions === 5) {
+        return { heading: "Reading", positions };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return {
+      heading: document.querySelector("h1")?.textContent?.trim(),
+      positions: document.querySelectorAll(".position-map button").length,
+    };
+  })()`);
+  if (readingReady.heading !== "Reading" || readingReady.positions !== 5) {
+    throw new Error(`Panorama reading did not open: ${JSON.stringify(readingReady)}`);
+  }
+
+  const positionBeforeSwipe = await evaluate(cdp, `(async () => {
+    const map = document.querySelector(".position-map");
+    if (!map) throw new Error("Position map was not found.");
+    map.scrollLeft = 0;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = map.getBoundingClientRect();
+    return {
+      scrollLeft: map.scrollLeft,
+      overflow: map.scrollWidth - map.clientWidth,
+      active: map.querySelector('[aria-current="step"]')?.getAttribute("data-position-index"),
+      startX: rect.right - 24,
+      startY: rect.top + rect.height / 2,
+      endX: rect.left + 24,
+      endY: rect.top + rect.height / 2,
+    };
+  })()`);
+  await dispatchTouchSwipe(cdp, positionBeforeSwipe);
+  const positionAfterSwipe = await evaluate(cdp, `(() => {
+    const map = document.querySelector(".position-map");
+    return {
+      scrollLeft: map?.scrollLeft ?? -1,
+      active: map?.querySelector('[aria-current="step"]')?.getAttribute("data-position-index"),
+    };
+  })()`);
+  if (
+    positionBeforeSwipe.overflow <= 1 ||
+    positionAfterSwipe.scrollLeft <= positionBeforeSwipe.scrollLeft + 1 ||
+    positionAfterSwipe.active !== positionBeforeSwipe.active
+  ) {
+    throw new Error(`Position-map touch scroll failed: ${JSON.stringify({ positionBeforeSwipe, positionAfterSwipe })}`);
+  }
+
+  const artworkBeforeSwipe = await evaluate(cdp, `(async () => {
+    const target = document.querySelector(".artwork-button");
+    if (!target) throw new Error("Artwork button was not found.");
+    window.scrollTo({ top: 0, behavior: "auto" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = target.getBoundingClientRect();
+    const startY = Math.min(rect.bottom - 30, 760);
+    return {
+      scrollY: window.scrollY,
+      maxScrollY: document.documentElement.scrollHeight - window.innerHeight,
+      pickerOpen: Boolean(document.querySelector(".card-picker")),
+      startX: rect.left + rect.width / 2,
+      startY,
+      endX: rect.left + rect.width / 2,
+      endY: Math.max(80, startY - 240),
+    };
+  })()`);
+  await dispatchTouchSwipe(cdp, artworkBeforeSwipe);
+  const artworkAfterSwipe = await evaluate(cdp, `({
+    scrollY: window.scrollY,
+    pickerOpen: Boolean(document.querySelector(".card-picker")),
+  })`);
+  if (
+    artworkBeforeSwipe.pickerOpen ||
+    artworkBeforeSwipe.maxScrollY <= artworkBeforeSwipe.scrollY ||
+    artworkAfterSwipe.scrollY < artworkBeforeSwipe.scrollY + 40 ||
+    artworkAfterSwipe.pickerOpen
+  ) {
+    throw new Error(`Artwork touch scroll failed: ${JSON.stringify({ artworkBeforeSwipe, artworkAfterSwipe })}`);
+  }
+
+  const artworkTapTarget = await evaluate(cdp, `(async () => {
+    const target = document.querySelector(".artwork-button");
+    if (!target) throw new Error("Artwork button was not found.");
+    const absoluteTop = target.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, absoluteTop - 230), behavior: "auto" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = target.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: Math.min(rect.top + rect.height / 2, 760) };
+  })()`);
+  await dispatchTouchTap(cdp, artworkTapTarget);
+  const pickerBeforeSwipe = await evaluate(cdp, `(async () => {
+    const picker = document.querySelector(".card-picker");
+    const results = document.querySelector(".card-results");
+    if (!picker || !results) throw new Error("Touch tap did not open the card picker.");
+    results.scrollTop = 0;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rect = results.getBoundingClientRect();
+    return {
+      open: true,
+      scrollTop: results.scrollTop,
+      overflow: results.scrollHeight - results.clientHeight,
+      selected: results.querySelectorAll("button.is-selected").length,
+      startX: rect.left + rect.width / 2,
+      startY: rect.bottom - 28,
+      endX: rect.left + rect.width / 2,
+      endY: rect.top + 28,
+    };
+  })()`);
+  await dispatchTouchSwipe(cdp, pickerBeforeSwipe);
+  const pickerAfterSwipe = await evaluate(cdp, `(() => {
+    const results = document.querySelector(".card-results");
+    return {
+      open: Boolean(document.querySelector(".card-picker")),
+      scrollTop: results?.scrollTop ?? -1,
+      selected: results?.querySelectorAll("button.is-selected").length ?? -1,
+    };
+  })()`);
+  if (
+    !pickerBeforeSwipe.open ||
+    pickerBeforeSwipe.overflow <= 40 ||
+    pickerAfterSwipe.scrollTop < pickerBeforeSwipe.scrollTop + 40 ||
+    !pickerAfterSwipe.open ||
+    pickerAfterSwipe.selected !== pickerBeforeSwipe.selected
+  ) {
+    throw new Error(`Card-picker touch scroll failed: ${JSON.stringify({ pickerBeforeSwipe, pickerAfterSwipe })}`);
+  }
+
+  const touchGestures = {
+    viewport: touchSetup,
+    spread: {
+      scrollDelta: spreadAfterSwipe.scrollY - spreadBeforeSwipe.scrollY,
+      selectedBefore: spreadBeforeSwipe.selected,
+      selectedAfter: spreadAfterSwipe.selected,
+    },
+    tap: panoramaTapped,
+    positionMap: {
+      overflow: positionBeforeSwipe.overflow,
+      scrollDelta: positionAfterSwipe.scrollLeft - positionBeforeSwipe.scrollLeft,
+      activeBefore: positionBeforeSwipe.active,
+      activeAfter: positionAfterSwipe.active,
+    },
+    artwork: {
+      scrollDelta: artworkAfterSwipe.scrollY - artworkBeforeSwipe.scrollY,
+      pickerOpen: artworkAfterSwipe.pickerOpen,
+    },
+    picker: {
+      overflow: pickerBeforeSwipe.overflow,
+      scrollDelta: pickerAfterSwipe.scrollTop - pickerBeforeSwipe.scrollTop,
+      selectedBefore: pickerBeforeSwipe.selected,
+      selectedAfter: pickerAfterSwipe.selected,
+      open: pickerAfterSwipe.open,
+    },
+  };
+
+  console.log({ installed, offlineResult, persistedDraft, touchGestures });
   cdp.close();
 } finally {
   stopProcessTree(chrome);

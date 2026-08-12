@@ -348,6 +348,13 @@ test("ships the complete local-first PWA surface", async () => {
   assert.match(verifyOffline, /navigationUi/);
   assert.match(verifyOffline, /sameScreenReset/);
   assert.match(verifyOffline, /hero-actions \.secondary-action/);
+  assert.match(verifyOffline, /Emulation\.setDeviceMetricsOverride/);
+  assert.match(verifyOffline, /Emulation\.setTouchEmulationEnabled/);
+  assert.match(verifyOffline, /Input\.dispatchTouchEvent/);
+  assert.match(verifyOffline, /spreadBeforeSwipe/);
+  assert.match(verifyOffline, /positionBeforeSwipe/);
+  assert.match(verifyOffline, /artworkBeforeSwipe/);
+  assert.match(verifyOffline, /pickerBeforeSwipe/);
   assert.equal(packageJson.name, "ritual-atlas");
   assert.equal(packageJson.version, "1.0.0");
   assert.match(packageJson.scripts["verify:offline"], /--pages/);

@@ -14,6 +14,9 @@ guidebook.
 
 - a complete searchable 79-card catalog
 - 79 original, card-specific figurative illustrations optimized for the app
+- original bilingual interpretations for all 79 cards, with Combined, Tarot,
+  and Oracle perspectives, upright/reversed meanings, keywords, and reflection
+  prompts
 - six reading layouts, including a freeform session
 - combined, Tarot, Oracle, and mixed reading lenses
 - upright/reversed orientation, first-seen aspect, notes, reflections, and tags
@@ -24,12 +27,14 @@ guidebook.
 - an installable manifest and offline service worker
 - English and Dutch UI copy
 
-The built-in illustrations were generated specifically for this personal
-project from an independent art direction. They do not reproduce the physical
-deck imagery, card backs, or guidebook text. Source PNGs are archived locally;
-the installable app ships smaller WebP versions and caches the full library for
-offline use. The current 79-card delivery set is 25.6 MB in total, with every
-image normalized to a 900 × 1555 delivery canvas.
+The built-in illustrations and interpretations were created specifically for
+this personal project from an independent art direction. The meanings are
+gentle prompts for personal reflection rather than copied deck text or fixed
+predictions. They do not reproduce the physical deck imagery, card backs, or
+guidebook. Source PNGs are archived locally; the installable app ships smaller
+WebP versions and caches the full library for offline use. The current 79-card
+delivery set is 25.6 MB in total, with every image normalized to a 900 × 1555
+delivery canvas.
 
 ## Privacy model
 

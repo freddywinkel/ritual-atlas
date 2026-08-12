@@ -987,6 +987,85 @@ try {
     reopenedPicker.querySelector('button[aria-label="Close"]')?.click();
     await waitFor(() => !document.querySelector(".card-picker"), "picker close before card reset");
 
+    const uprightCombinedMeaning = text(await waitFor(
+      () => document.querySelector(".interpretation-meaning"),
+      "upright combined interpretation",
+    ));
+    button("Reversed")?.click();
+    await wait(80);
+    const reversedCombinedMeaning = text(document.querySelector(".interpretation-meaning"));
+    button("Tarot")?.click();
+    await wait(80);
+    const reversedTarotMeaning = text(document.querySelector(".interpretation-meaning"));
+    button("Oracle")?.click();
+    await wait(80);
+    const reversedOracleMeaning = text(document.querySelector(".interpretation-meaning"));
+    const oracleMode = text(document.querySelector(".interpretation-mode"));
+
+    button("Back")?.click();
+    await waitFor(() => document.querySelector("h1")?.textContent?.trim() === "What would you like to explore?", "Home before Dutch switch");
+    button("Switch to Dutch")?.click();
+    await waitFor(() => document.documentElement.lang === "nl", "Dutch UI");
+    [...document.querySelectorAll("button")]
+      .find((candidate) => buttonName(candidate).startsWith("Ga verder met het concept"))
+      ?.click();
+    await waitFor(() => document.querySelector(".interpretation-meaning"), "Dutch interpretation");
+    const dutchOracleMeaning = text(document.querySelector(".interpretation-meaning"));
+    const dutchMode = text(document.querySelector(".interpretation-mode"));
+    const dutchDisclaimer = text(document.querySelector(".interpretation-disclaimer"));
+    button("Terug")?.click();
+    await waitFor(() => document.querySelector("h1")?.textContent?.trim() === "Wat wil je verkennen?", "Dutch Home");
+    button("Schakel over naar Engels")?.click();
+    await waitFor(() => document.documentElement.lang === "en", "English UI restored");
+    [...document.querySelectorAll("button")]
+      .find((candidate) => buttonName(candidate).startsWith("Continue draft"))
+      ?.click();
+    await waitFor(() => document.querySelector(".interpretation-meaning"), "English interpretation restored");
+
+    const interpretation = {
+      uprightCombinedMeaning,
+      reversedCombinedMeaning,
+      reversedTarotMeaning,
+      reversedOracleMeaning,
+      oracleMode,
+      dutchOracleMeaning,
+      dutchMode,
+      dutchDisclaimer,
+      reflection: text(document.querySelector(".interpretation-reflection p")),
+      keywordCount: document.querySelectorAll(".interpretation-keywords li").length,
+    };
+
+    button("Change card")?.click();
+    const combinedOnlyPicker = await waitFor(() => document.querySelector(".card-picker"), "picker for card 79");
+    setInputValue(combinedOnlyPicker.querySelector("input"), "79");
+    await wait(80);
+    [...combinedOnlyPicker.querySelectorAll(".card-results > button")]
+      .find((candidate) => text(candidate.querySelector("strong")).includes("Garden Chimes"))
+      ?.click();
+    await waitFor(
+      () => document.querySelector(".card-title-block h2")?.textContent?.includes("Garden Chimes"),
+      "combined-only card",
+    );
+    const combinedOnly = {
+      cardName: text(document.querySelector(".card-title-block h2")),
+      combinedPressed: button("Combined")?.getAttribute("aria-pressed"),
+      tarotDisabled: Boolean(button("Tarot")?.disabled),
+      oracleDisabled: Boolean(button("Oracle")?.disabled),
+      meaning: text(document.querySelector(".interpretation-meaning")),
+      mode: text(document.querySelector(".interpretation-mode")),
+    };
+
+    button("Change card")?.click();
+    const threeAgainPicker = await waitFor(() => document.querySelector(".card-picker"), "picker after card 79");
+    setInputValue(threeAgainPicker.querySelector("input"), "three w");
+    await wait(80);
+    [...threeAgainPicker.querySelectorAll(".card-results > button")]
+      .find((candidate) => text(candidate.querySelector("strong")).includes("Three of Wands"))
+      ?.click();
+    await waitFor(
+      () => document.querySelector(".card-title-block h2")?.textContent?.includes("Three of Wands"),
+      "Three of Wands restored",
+    );
     button("Reversed")?.click();
     button("Tarot")?.click();
     button("Jumper")?.click();
@@ -1057,6 +1136,8 @@ try {
       missingRecovery,
       searchCases,
       selectedSemantics,
+      interpretation,
+      combinedOnly,
       removed,
       resetDefaults,
       reopened,
@@ -1081,6 +1162,30 @@ try {
     controlFlowReading.selectedSemantics.pressed !== "true" ||
     !controlFlowReading.selectedSemantics.text.includes("Selected") ||
     controlFlowReading.selectedSemantics.hasPlus ||
+    new Set([
+      controlFlowReading.interpretation.uprightCombinedMeaning,
+      controlFlowReading.interpretation.reversedCombinedMeaning,
+      controlFlowReading.interpretation.reversedTarotMeaning,
+      controlFlowReading.interpretation.reversedOracleMeaning,
+    ]).size !== 4 ||
+    controlFlowReading.interpretation.uprightCombinedMeaning.length < 70 ||
+    controlFlowReading.interpretation.reversedCombinedMeaning.length < 70 ||
+    controlFlowReading.interpretation.reversedTarotMeaning.length < 70 ||
+    controlFlowReading.interpretation.reversedOracleMeaning.length < 70 ||
+    controlFlowReading.interpretation.dutchOracleMeaning.length < 70 ||
+    !controlFlowReading.interpretation.oracleMode.includes("Oracle") ||
+    !controlFlowReading.interpretation.oracleMode.includes("Reversed") ||
+    !controlFlowReading.interpretation.dutchMode.includes("Orakel") ||
+    !controlFlowReading.interpretation.dutchMode.includes("Omgekeerd") ||
+    !controlFlowReading.interpretation.dutchDisclaimer.includes("niet de officiële gids") ||
+    !controlFlowReading.interpretation.reflection.endsWith("?") ||
+    controlFlowReading.interpretation.keywordCount !== 3 ||
+    !controlFlowReading.combinedOnly.cardName.includes("Garden Chimes") ||
+    controlFlowReading.combinedOnly.combinedPressed !== "true" ||
+    !controlFlowReading.combinedOnly.tarotDisabled ||
+    !controlFlowReading.combinedOnly.oracleDisabled ||
+    controlFlowReading.combinedOnly.meaning.length < 70 ||
+    !controlFlowReading.combinedOnly.mode.includes("Combined") ||
     controlFlowReading.removed.progress !== "0/1" ||
     controlFlowReading.removed.empty !== "Empty position" ||
     controlFlowReading.removed.controlsPresent ||

@@ -154,6 +154,7 @@ export default function TarotApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeReadingId, setActiveReadingId] = useState<string | null>(null);
   const [activePullIndex, setActivePullIndex] = useState(0);
+  const [navigationRevision, setNavigationRevision] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
   const [cardFilter, setCardFilter] = useState<CardFilter>("all");
@@ -178,6 +179,7 @@ export default function TarotApp() {
   );
   const importInputRef = useRef<HTMLInputElement>(null);
   const screenRef = useRef<HTMLElement>(null);
+  const positionMapRef = useRef<HTMLDivElement>(null);
   const pickerDialogRef = useRef<HTMLElement>(null);
   const pickerSearchInputRef = useRef<HTMLInputElement>(null);
   const pickerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -346,8 +348,28 @@ export default function TarotApp() {
 
   useEffect(() => {
     if (!loaded) return;
-    window.requestAnimationFrame(() => screenRef.current?.focus({ preventScroll: true }));
-  }, [loaded, screen]);
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    const frame = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      screenRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [loaded, navigationRevision, screen]);
+
+  useEffect(() => {
+    if (screen !== "reading") return;
+    const frame = window.requestAnimationFrame(() => {
+      const map = positionMapRef.current;
+      const current = map?.querySelector<HTMLElement>(
+        `[data-position-index="${activePullIndex}"]`,
+      );
+      if (!map || !current) return;
+      const left = current.offsetLeft - (map.clientWidth - current.offsetWidth) / 2;
+      map.scrollTo({ left: Math.max(0, left), behavior: "auto" });
+      current.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePullIndex, activeReadingId, screen]);
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -355,7 +377,7 @@ export default function TarotApp() {
     pickerReturnFocusRef.current = document.activeElement as HTMLElement | null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => pickerSearchInputRef.current?.focus());
+    window.requestAnimationFrame(() => pickerSearchInputRef.current?.focus({ preventScroll: true }));
 
     const handleDialogKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -385,7 +407,7 @@ export default function TarotApp() {
     return () => {
       document.removeEventListener("keydown", handleDialogKeyDown);
       document.body.style.overflow = previousOverflow;
-      pickerReturnFocusRef.current?.focus();
+      pickerReturnFocusRef.current?.focus({ preventScroll: true });
     };
   }, [pickerOpen]);
 
@@ -398,7 +420,7 @@ export default function TarotApp() {
     window.requestAnimationFrame(() => {
       confirmationDialogRef.current
         ?.querySelector<HTMLElement>("[data-autofocus]")
-        ?.focus();
+        ?.focus({ preventScroll: true });
     });
 
     const handleConfirmationKeyDown = (event: KeyboardEvent) => {
@@ -430,7 +452,7 @@ export default function TarotApp() {
     return () => {
       document.removeEventListener("keydown", handleConfirmationKeyDown);
       document.body.style.overflow = previousOverflow;
-      confirmationReturnFocusRef.current?.focus();
+      confirmationReturnFocusRef.current?.focus({ preventScroll: true });
     };
   }, [confirmation]);
 
@@ -525,9 +547,24 @@ export default function TarotApp() {
   }
 
   function navigate(next: Screen, preserveNotice = false) {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setScreen(next);
+    setNavigationRevision((revision) => revision + 1);
     if (!preserveNotice) setNotice(null);
-    window.scrollTo({ top: 0, behavior: appState.settings.reducedMotion ? "auto" : "smooth" });
+  }
+
+  function showPull(
+    index: number,
+    maximumIndex = Math.max(0, (activeReading?.pulls.length ?? 1) - 1),
+  ) {
+    if (!activeReading) return;
+    const nextIndex = Math.max(0, Math.min(index, maximumIndex));
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    setActivePullIndex(nextIndex);
+    setCardAnnouncement("");
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
   }
 
   function setLanguage(next: Language) {
@@ -694,7 +731,7 @@ export default function TarotApp() {
       ],
     }));
     setAppState((current) => ({ ...current, activeDraftId: activeReading.id }));
-    setActivePullIndex(nextOrder);
+    showPull(nextOrder, nextOrder);
   }
 
   function removeFreeformPosition() {
@@ -710,7 +747,7 @@ export default function TarotApp() {
         .filter((_, index) => index !== activePullIndex)
         .map((pull, order) => ({ ...pull, order })),
     }));
-    setActivePullIndex(nextIndex);
+    showPull(nextIndex);
   }
 
   function addLaterReflection() {
@@ -1306,7 +1343,7 @@ export default function TarotApp() {
           <p className="eyebrow">{t("reading.positionCount", { current: activePullIndex + 1, total: activeReading.pulls.length })}</p>
           <h2 id="position-title">{activePosition.name[language]}</h2>
           <p>{activePosition.prompt[language]}</p>
-          <div className="position-map" aria-label={t("reading.progress") }>
+          <div ref={positionMapRef} className="position-map" aria-label={t("reading.progress") }>
             {activeReading.spreadSnapshot.positions.map((position, index) => {
               const pull = activeReading.pulls[index];
               return (
@@ -1314,8 +1351,9 @@ export default function TarotApp() {
                   key={position.id}
                   type="button"
                   className={index === activePullIndex ? "is-current" : ""}
+                  data-position-index={index}
                   aria-current={index === activePullIndex ? "step" : undefined}
-                  onClick={() => setActivePullIndex(index)}
+                  onClick={() => showPull(index)}
                 >
                   <span>{index + 1}</span>
                   <small>{position.name[language]}</small>
@@ -1372,8 +1410,8 @@ export default function TarotApp() {
         </section>
 
         <div className="position-navigation">
-          <button type="button" disabled={activePullIndex === 0} onClick={() => setActivePullIndex((index) => index - 1)}>← {t("actions.previous")}</button>
-          <button type="button" disabled={activePullIndex === activeReading.pulls.length - 1} onClick={() => setActivePullIndex((index) => index + 1)}>{t("actions.next")} →</button>
+          <button type="button" disabled={activePullIndex === 0} onClick={() => showPull(activePullIndex - 1)}>← {t("actions.previous")}</button>
+          <button type="button" disabled={activePullIndex === activeReading.pulls.length - 1} onClick={() => showPull(activePullIndex + 1)}>{t("actions.next")} →</button>
         </div>
 
         <button

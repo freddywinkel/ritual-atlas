@@ -40,6 +40,7 @@ export function CardArtwork({
         <Image
           src={publicPath(`/art/cards/${card.id}.webp`)}
           alt={alt}
+          draggable={false}
           fill
           sizes={compact ? "96px" : "(max-width: 600px) 86vw, 352px"}
           priority={!compact}

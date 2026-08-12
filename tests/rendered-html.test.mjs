@@ -492,7 +492,7 @@ test("guards audited persistence, journal, spread, and security behavior", async
   assert.match(finePointerHover, /\.spread-choice:hover/);
   assert.match(finePointerHover, /\.card-results > button:hover/);
   assert.match(styles, /\.card-results \{[\s\S]*?touch-action: pan-y/);
-  assert.match(styles, /\.position-map \{[\s\S]*?touch-action: pan-x/);
+  assert.match(styles, /\.position-map \{[\s\S]*?touch-action: pan-x pan-y/);
   assert.match(styles, /@media \(max-height: 480px\) and \(orientation: landscape\)/);
   assert.match(styles, /\.card-results \{ min-height: 132px; \}/);
   assert.match(styles, /\.mobile-brand \{ min-height: 44px/);

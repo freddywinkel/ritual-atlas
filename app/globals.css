@@ -933,7 +933,7 @@ h3 {
   grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
   gap: 7px;
   scroll-behavior: auto;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
 }
 
 .position-map button {

@@ -21,6 +21,10 @@ import {
   type UiCopyKey,
 } from "../data/i18n";
 import {
+  getCardInterpretation,
+  getInterpretationPerspective,
+} from "../data/interpretations";
+import {
   createInitialState,
   loadStateSnapshot,
   makeBackup,
@@ -1432,10 +1436,26 @@ export default function TarotApp() {
     }
     const progress = readingProgress(activeReading);
     const cardName = activeCard ? getCardDisplayName(activeCard, language) : t("reading.emptyPosition");
-    const effectiveLens = activeCard?.combinedOnly
+    const effectiveLens: Exclude<ReadingLens, "mixed"> = activeCard?.combinedOnly
       ? "combined"
       : activePull.lensOverride ?? (activeReading.readingLens === "mixed" ? "combined" : activeReading.readingLens);
     const missingCards = activeReading.pulls.filter((pull) => !pull.cardId).length;
+    const cardInterpretation = activeCard
+      ? getCardInterpretation(activeCard.id)
+      : null;
+    const interpretationPerspective = cardInterpretation
+      ? getInterpretationPerspective(cardInterpretation, effectiveLens)
+      : null;
+    const interpretationMeaning = interpretationPerspective
+      ? interpretationPerspective[activePull.orientation][language]
+      : null;
+    const interpretationLensLabel = t(
+      effectiveLens === "combined"
+        ? "lenses.combinedShort"
+        : effectiveLens === "tarot"
+          ? "lenses.tarotShort"
+          : "lenses.oracleShort",
+    );
 
     return (
       <div className="reading-page">
@@ -1527,6 +1547,19 @@ export default function TarotApp() {
             {language === "nl" && activeCard && appState.settings.showEnglishCardNamesInDutch && (
               <p className="printed-title">{activeCard.prismaTitleEn} / {activeCard.cosmaTitleEn}</p>
             )}
+            {activeCard && (
+              <button
+                className="interpretation-jump"
+                type="button"
+                aria-controls="card-interpretation-panel"
+                onClick={() => document.getElementById("card-interpretation-panel")?.scrollIntoView({
+                  behavior: appState.settings.reducedMotion ? "auto" : "smooth",
+                  block: "start",
+                })}
+              >
+                {t("interpretation.jump")} <span aria-hidden="true">↓</span>
+              </button>
+            )}
           </div>
         </section>
 
@@ -1538,6 +1571,7 @@ export default function TarotApp() {
                   <button
                     key={orientation}
                     type="button"
+                    aria-controls="card-interpretation-panel"
                     aria-pressed={activePull.orientation === orientation}
                     onClick={() => updateActivePull({ orientation })}
                   >
@@ -1550,6 +1584,7 @@ export default function TarotApp() {
                   <button
                     key={lens}
                     type="button"
+                    aria-controls="card-interpretation-panel"
                     disabled={activeCard.combinedOnly && lens !== "combined"}
                     aria-pressed={effectiveLens === lens}
                     onClick={() => updateActivePull({ lensOverride: lens })}
@@ -1561,6 +1596,45 @@ export default function TarotApp() {
             </section>
             {activeCard.combinedOnly && <p className="field-note">{t("lenses.combinedOnly")}</p>}
           </>
+        )}
+
+        {activeCard && interpretationPerspective && interpretationMeaning && (
+          <section
+            id="card-interpretation-panel"
+            className="interpretation-panel"
+            aria-labelledby="card-interpretation-title"
+          >
+            <header>
+              <div>
+                <p className="eyebrow">{t("interpretation.original")}</p>
+                <h3 id="card-interpretation-title">{t("interpretation.title")}</h3>
+              </div>
+              <span className="interpretation-mode">
+                {interpretationLensLabel}
+                <i aria-hidden="true" />
+                {t(activePull.orientation === "upright" ? "orientation.upright" : "orientation.reversed")}
+              </span>
+            </header>
+            <ul className="interpretation-keywords" aria-label={t("interpretation.title")}>
+              {interpretationPerspective.keywords[language].map((keyword) => (
+                <li key={keyword}>{keyword}</li>
+              ))}
+            </ul>
+            <p className="interpretation-meaning">{interpretationMeaning}</p>
+            <div className="interpretation-reflection">
+              <small>{t("interpretation.reflect")}</small>
+              <p>{interpretationPerspective.reflection[language]}</p>
+            </div>
+            <p className="interpretation-disclaimer">{t("interpretation.disclaimer")}</p>
+          </section>
+        )}
+        {activeCard && interpretationPerspective && (
+          <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+            {t("interpretation.updated", {
+              lens: interpretationLensLabel,
+              orientation: t(activePull.orientation === "upright" ? "orientation.upright" : "orientation.reversed"),
+            })}
+          </p>
         )}
 
         <div className="card-action-row">

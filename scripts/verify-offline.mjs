@@ -330,6 +330,60 @@ try {
     throw new Error(`Offline interaction failed: ${JSON.stringify(offlineResult)}`);
   }
 
+  const navigationUi = await evaluate(cdp, `(async () => {
+    const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+    const activeDraft = document.querySelector(".reading-topbar h1")?.textContent?.trim() === "Reading";
+    if (!activeDraft) throw new Error("Expected the offline draft to be open before UI navigation checks.");
+
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+    await wait(30);
+    const homeButton = [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Ritual Atlas");
+    homeButton?.click();
+    await wait(50);
+    const homeReset = {
+      scrollY: window.scrollY,
+      heading: document.querySelector("h1")?.textContent?.trim(),
+      focus: document.activeElement?.tagName,
+    };
+
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+    await wait(30);
+    const startButton = [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.includes("Start a Reading"));
+    startButton?.click();
+    await wait(50);
+    const setupReset = {
+      scrollY: window.scrollY,
+      heading: document.querySelector("h1")?.textContent?.trim(),
+      focus: document.activeElement?.tagName,
+    };
+
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "auto" });
+    await wait(30);
+    const activeSetupButton = [...document.querySelectorAll(".bottom-nav button")]
+      .find((button) => button.textContent.includes("New Reading"));
+    activeSetupButton?.click();
+    await wait(50);
+    const sameScreenReset = {
+      scrollY: window.scrollY,
+      heading: document.querySelector("h1")?.textContent?.trim(),
+      focus: document.activeElement?.tagName,
+    };
+
+    return { homeReset, setupReset, sameScreenReset };
+  })()`);
+
+  for (const [name, result] of Object.entries(navigationUi)) {
+    if (
+      result.scrollY !== 0 ||
+      result.focus !== "MAIN" ||
+      (name === "homeReset" ? result.heading !== "What would you like to explore?" : result.heading !== "New Reading")
+    ) {
+      throw new Error(`UI navigation did not reset the screen: ${JSON.stringify(navigationUi)}`);
+    }
+  }
+
   const persistedLoad = cdp.waitForEvent("Page.loadEventFired");
   await cdp.send("Page.reload");
   await persistedLoad;

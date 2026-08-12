@@ -345,6 +345,8 @@ test("ships the complete local-first PWA surface", async () => {
   assert.match(verifyOffline, /savedOnDevice/);
   assert.match(verifyOffline, /brand\/ritual-gate-mark\.svg/);
   assert.match(verifyOffline, /persistedDraft/);
+  assert.match(verifyOffline, /navigationUi/);
+  assert.match(verifyOffline, /sameScreenReset/);
   assert.match(verifyOffline, /hero-actions \.secondary-action/);
   assert.equal(packageJson.name, "ritual-atlas");
   assert.equal(packageJson.version, "1.0.0");
@@ -432,8 +434,10 @@ test("ships deterministic, opaque Ritual Gate brand assets with safe maskable ar
 });
 
 test("guards audited persistence, journal, spread, and security behavior", async () => {
-  const [component, copy, layout] = await Promise.all([
+  const [component, artwork, styles, copy, layout] = await Promise.all([
     readFile(new URL("../app/components/TarotApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/components/CardArtwork.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/data/i18n.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
   ]);
@@ -456,6 +460,47 @@ test("guards audited persistence, journal, spread, and security behavior", async
   assert.doesNotMatch(component, /await clearStoredState\(\)/);
   assert.match(component, /let hasSeenController =/);
   assert.match(component, /if \(hasSeenController\) setUpdateAvailable\(true\)/);
+  const navigationHandler = sourceSection(component, "function navigate(", "function setLanguage(");
+  assert.doesNotMatch(navigationHandler, /behavior: appState\.settings\.reducedMotion/);
+  assert.match(navigationHandler, /behavior: "auto"/);
+  assert.match(component, /const \[navigationRevision, setNavigationRevision\] = useState\(0\)/);
+  assert.match(component, /setNavigationRevision\(\(revision\) => revision \+ 1\)/);
+  assert.match(component, /window\.scrollTo\(\{ top: 0, left: 0, behavior: "auto" \}\)/);
+  assert.match(component, /pickerSearchInputRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(component, /querySelector<HTMLElement>\("\[data-autofocus\]"\)[\s\S]*?focus\(\{ preventScroll: true \}\)/);
+  assert.match(component, /function showPull\(/);
+  assert.match(component, /current\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(component, /data-position-index=\{index\}/);
+
+  const persistentChoiceStyles = sourceSection(
+    styles,
+    ".spread-choice.is-selected",
+    ".spread-count",
+  );
+  assert.doesNotMatch(persistentChoiceStyles, /:hover/);
+  const persistentCardStyles = sourceSection(
+    styles,
+    ".card-results > button.is-selected",
+    ".card-result-number",
+  );
+  assert.doesNotMatch(persistentCardStyles, /:hover/);
+  const finePointerHover = sourceSection(
+    styles,
+    "@media (hover: hover) and (pointer: fine)",
+    ".reduce-motion *",
+  );
+  assert.match(finePointerHover, /\.spread-choice:hover/);
+  assert.match(finePointerHover, /\.card-results > button:hover/);
+  assert.match(styles, /\.card-results \{[\s\S]*?touch-action: pan-y/);
+  assert.match(styles, /\.position-map \{[\s\S]*?touch-action: pan-x/);
+  assert.match(styles, /@media \(max-height: 480px\) and \(orientation: landscape\)/);
+  assert.match(styles, /\.card-results \{ min-height: 132px; \}/);
+  assert.match(styles, /\.mobile-brand \{ min-height: 44px/);
+  assert.match(styles, /\.language-shortcut \{ width: 44px; height: 44px/);
+  assert.match(styles, /\.card-result-titles small \{[\s\S]*?white-space: normal/);
+  assert.match(styles, /\.confirmation-dialog \{[\s\S]*?max-height: calc\(100dvh - 16px\);[\s\S]*?overflow-y: auto/);
+  assert.match(artwork, /draggable=\{false\}/);
+  assert.match(styles, /\.card-artwork img \{[\s\S]*?pointer-events: none;[\s\S]*?-webkit-user-drag: none/);
 
   const globalNotice = sourceSection(component, "{storageConflict ? (", "<main");
   assert.match(globalNotice, /className="notice notice--error" role="alert"/);

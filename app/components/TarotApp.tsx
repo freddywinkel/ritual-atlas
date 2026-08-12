@@ -58,6 +58,8 @@ type CardFilter = "all" | "major" | "minor";
 type ConfirmationState =
   | { kind: "duplicate"; card: CardDefinition }
   | { kind: "delete" }
+  | { kind: "remove-card" }
+  | { kind: "remove-position" }
   | { kind: "restore"; backup: BackupPayload }
   | { kind: "reset" };
 
@@ -136,6 +138,15 @@ function parseTags(value: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeSearch(value: string, language: Language): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase(language === "nl" ? "nl" : "en")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function newestDraftId(readings: readonly Reading[], excludingId?: string): string | null {
   return (
     readings
@@ -160,12 +171,10 @@ export default function TarotApp() {
   const [cardFilter, setCardFilter] = useState<CardFilter>("all");
   const [journalSearch, setJournalSearch] = useState("");
   const [journalFilter, setJournalFilter] = useState<JournalFilter>("all");
-  const [setupSpreadId, setSetupSpreadId] = useState<SpreadTemplate["id"]>(SPREAD_TEMPLATES[1].id);
-  const [setupLens, setSetupLens] = useState<ReadingLens>("combined");
-  const [setupQuestion, setSetupQuestion] = useState("");
-  const [reflectionDrafts, setReflectionDrafts] = useState<Record<string, string>>({});
+  const [setupOptionsOpen, setSetupOptionsOpen] = useState(false);
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
   const [cardAnnouncement, setCardAnnouncement] = useState("");
+  const [readingReturnScreen, setReadingReturnScreen] = useState<"home" | "journal">("home");
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
   const [resetPhrase, setResetPhrase] = useState("");
@@ -198,6 +207,19 @@ export default function TarotApp() {
   const copy = UI_COPY[language];
   const t = (key: UiCopyKey, values?: Record<string, string | number>) =>
     interpolate(copy[key], values);
+
+  const setupDraft = appState.setupDraft ?? {
+    spreadId: "one-card",
+    lens: "combined" as ReadingLens,
+    question: "",
+  };
+  const setupSpreadId = (
+    SPREAD_TEMPLATES.some((spread) => spread.id === setupDraft.spreadId)
+      ? setupDraft.spreadId
+      : "one-card"
+  ) as SpreadTemplate["id"];
+  const setupLens = setupDraft.lens;
+  const setupQuestion = setupDraft.question;
 
   const persistState = useCallback((state: AppState): Promise<void> => {
     const operation = saveQueueRef.current
@@ -240,7 +262,8 @@ export default function TarotApp() {
         dirtyStateRef.current = false;
         setStorageLoadFailed(false);
         setAppState(stored);
-        if (stored.activeDraftId) setActiveReadingId(stored.activeDraftId);
+        setActiveReadingId(stored.activeDraftId);
+        setActivePullIndex(0);
       })
       .catch(() => {
         if (!cancelled) {
@@ -329,6 +352,9 @@ export default function TarotApp() {
         dirtyStateRef.current = false;
         setAppState(snapshot.state);
         setActiveReadingId(snapshot.state.activeDraftId);
+        setActivePullIndex(0);
+        setPickerSearch("");
+        setCardFilter("all");
         setSaveStatus("saved");
       } catch {
         setStorageLoadFailed(true);
@@ -538,6 +564,8 @@ export default function TarotApp() {
       dirtyStateRef.current = false;
       setAppState(stored);
       setActiveReadingId(stored.activeDraftId);
+      setActivePullIndex(0);
+      resetPickerState();
       setSaveStatus("idle");
     } catch {
       setStorageLoadFailed(true);
@@ -550,6 +578,7 @@ export default function TarotApp() {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setScreen(next);
     setNavigationRevision((revision) => revision + 1);
+    setCardAnnouncement("");
     if (!preserveNotice) setNotice(null);
   }
 
@@ -575,9 +604,35 @@ export default function TarotApp() {
     }));
   }
 
+  function updateSetupDraft(patch: Partial<NonNullable<AppState["setupDraft"]>>) {
+    setAppState((current) => ({
+      ...current,
+      setupDraft: {
+        spreadId: current.setupDraft?.spreadId ?? "one-card",
+        lens: current.setupDraft?.lens ?? "combined",
+        question: current.setupDraft?.question ?? "",
+        ...patch,
+      },
+    }));
+  }
+
+  function resetPickerState() {
+    setPickerSearch("");
+    setCardFilter("all");
+  }
+
+  function openCardPicker() {
+    setCardAnnouncement("");
+    resetPickerState();
+    setPickerOpen(true);
+  }
+
   function openReading(reading: Reading, position = 0) {
+    setReadingReturnScreen(screen === "journal" ? "journal" : "home");
     setActiveReadingId(reading.id);
     setActivePullIndex(Math.min(position, Math.max(0, reading.pulls.length - 1)));
+    setCardAnnouncement("");
+    resetPickerState();
     setAppState((current) => ({
       ...current,
       activeDraftId: reading.status === "draft" ? reading.id : current.activeDraftId,
@@ -617,7 +672,10 @@ export default function TarotApp() {
     }));
     setActiveReadingId(reading.id);
     setActivePullIndex(0);
-    setSetupQuestion("");
+    setReadingReturnScreen("home");
+    setCardAnnouncement("");
+    resetPickerState();
+    updateSetupDraft({ question: "" });
     navigate("reading");
   }
 
@@ -628,7 +686,7 @@ export default function TarotApp() {
       firstSeenAspect: card.combinedOnly ? null : activePull?.firstSeenAspect ?? null,
     });
     setPickerOpen(false);
-    setPickerSearch("");
+    resetPickerState();
     setCardAnnouncement(
       t("cardPicker.selectedAnnouncement", {
         card: getCardDisplayName(card, language),
@@ -653,6 +711,11 @@ export default function TarotApp() {
     if (!activeReading) return;
     if (!isReadingComplete(activeReading)) {
       setNotice(t("reading.tapPosition"));
+      const firstEmpty = activeReading.pulls.findIndex((pull) => !pull.cardId);
+      if (firstEmpty >= 0) {
+        showPull(firstEmpty);
+        window.requestAnimationFrame(() => openCardPicker());
+      }
       return;
     }
     setAppState((current) => {
@@ -669,6 +732,27 @@ export default function TarotApp() {
     });
     setNotice(t("reading.savedNotice"));
     navigate("journal", true);
+  }
+
+  function reopenReading() {
+    if (!activeReading || activeReading.status !== "complete") return;
+    updateReading(activeReading.id, (reading) => ({ ...reading, status: "draft" }));
+    setAppState((current) => ({ ...current, activeDraftId: activeReading.id }));
+  }
+
+  function clearActiveCard() {
+    if (!activeReading || !activePull) return;
+    updateActivePull({
+      cardId: null,
+      orientation: "upright",
+      role: "primary",
+      lensOverride: activeReading.readingLens === "mixed" ? activePosition?.defaultLens ?? "combined" : null,
+      firstSeenAspect: null,
+      firstImpression: "",
+      interpretation: "",
+    });
+    setConfirmation(null);
+    setCardAnnouncement("");
   }
 
   function deleteActiveReading() {
@@ -736,6 +820,20 @@ export default function TarotApp() {
 
   function removeFreeformPosition() {
     if (!activeReading?.spreadSnapshot.isFreeform || activeReading.pulls.length <= 1) return;
+    const hasContent = Boolean(
+      activePull?.cardId ||
+      activePull?.firstImpression.trim() ||
+      activePull?.interpretation.trim(),
+    );
+    if (hasContent) {
+      setConfirmation({ kind: "remove-position" });
+      return;
+    }
+    confirmRemoveFreeformPosition();
+  }
+
+  function confirmRemoveFreeformPosition() {
+    if (!activeReading?.spreadSnapshot.isFreeform || activeReading.pulls.length <= 1) return;
     const nextIndex = Math.max(0, Math.min(activePullIndex - 1, activeReading.pulls.length - 2));
     updateReading(activeReading.id, (reading) => ({
       ...reading,
@@ -747,15 +845,17 @@ export default function TarotApp() {
         .filter((_, index) => index !== activePullIndex)
         .map((pull, order) => ({ ...pull, order })),
     }));
+    setConfirmation(null);
     showPull(nextIndex);
   }
 
   function addLaterReflection() {
     if (!activeReading) return;
-    const draft = reflectionDrafts[activeReading.id] ?? "";
+    const draft = activeReading.laterReflectionDraft ?? "";
     if (!draft.trim()) return;
     updateReading(activeReading.id, (reading) => ({
       ...reading,
+      laterReflectionDraft: "",
       laterReflections: [
         ...reading.laterReflections,
         {
@@ -765,11 +865,6 @@ export default function TarotApp() {
         },
       ],
     }));
-    setReflectionDrafts((current) => {
-      const next = { ...current };
-      delete next[activeReading.id];
-      return next;
-    });
   }
 
   async function exportBackup() {
@@ -822,8 +917,9 @@ export default function TarotApp() {
       dirtyStateRef.current = false;
       setAppState(backup.state);
       setActiveReadingId(backup.state.activeDraftId);
-      setReflectionDrafts({});
+      setActivePullIndex(0);
       setTagDrafts({});
+      resetPickerState();
       setJournalSearch("");
       setJournalFilter("all");
       setSaveStatus("saved");
@@ -872,11 +968,13 @@ export default function TarotApp() {
       dirtyStateRef.current = false;
       setAppState(initial);
       setActiveReadingId(null);
-      setReflectionDrafts({});
+      setActivePullIndex(0);
       setTagDrafts({});
       setJournalSearch("");
       setJournalFilter("all");
-      setPickerSearch("");
+      resetPickerState();
+      setSetupOptionsOpen(false);
+      setCardAnnouncement("");
       setConfirmation(null);
       setResetPhrase("");
       setNotice(UI_COPY[initial.settings.language]["privacy.dataCleared"]);
@@ -902,20 +1000,21 @@ export default function TarotApp() {
 
   const usedCardIds = new Set(activeReading?.pulls.map((pull) => pull.cardId).filter(Boolean));
   const filteredCards = useMemo(() => {
-    const query = pickerSearch.trim().toLocaleLowerCase(language === "nl" ? "nl" : "en");
+    const queryTokens = normalizeSearch(pickerSearch, language).split(" ").filter(Boolean);
     return CARDS.filter((card) => {
       if (cardFilter !== "all" && card.arcana !== cardFilter) return false;
-      if (!query) return true;
-      const haystack = [
+      if (!queryTokens.length) return true;
+      const displayedNumber = card.order + 1;
+      const haystack = normalizeSearch([
+        String(displayedNumber),
+        String(displayedNumber).padStart(2, "0"),
         card.prismaTitleEn,
         card.prismaTitleNl ?? "",
         card.cosmaTitleEn,
         card.cosmaAliasNl ?? "",
         ...card.searchAliases,
-      ]
-        .join(" ")
-        .toLocaleLowerCase(language === "nl" ? "nl" : "en");
-      return haystack.includes(query);
+      ].join(" "), language);
+      return queryTokens.every((token) => haystack.includes(token));
     });
   }, [cardFilter, language, pickerSearch]);
 
@@ -1058,7 +1157,7 @@ export default function TarotApp() {
               language === "en" ? "language.switchToDutch" : "language.switchToEnglish",
             )}
           >
-            {language.toUpperCase()}
+            {language === "en" ? "NL" : "EN"}
           </button>
         </header>
 
@@ -1168,14 +1267,14 @@ export default function TarotApp() {
             <h1>{t("home.title")}</h1>
             <p className="lede">{t("home.subtitle")}</p>
             <div className="hero-actions">
-              <button className="primary-action" type="button" onClick={() => navigate("setup")}>
-                <NewReadingGlyph className="new-reading-glyph" />{t("home.startReading")}
-              </button>
               {draft && (
-                <button className="secondary-action" type="button" onClick={() => openReading(draft)}>
+                <button className="primary-action" type="button" onClick={() => openReading(draft)}>
                   {t("home.continueDraft")} · {readingProgress(draft).complete}/{readingProgress(draft).total}
                 </button>
               )}
+              <button className={draft ? "secondary-action" : "primary-action"} type="button" onClick={() => navigate("setup")}>
+                <NewReadingGlyph className="new-reading-glyph" />{t(draft ? "home.startAnotherReading" : "home.startReading")}
+              </button>
             </div>
             <p className="privacy-line"><span aria-hidden="true">●</span>{t("home.offlineNote")}</p>
           </div>
@@ -1223,6 +1322,8 @@ export default function TarotApp() {
   }
 
   function renderSetup(): ReactNode {
+    const selectedSpread = SPREAD_TEMPLATES.find((spread) => spread.id === setupSpreadId) ?? SPREAD_TEMPLATES[0];
+    const selectedLens = LENSES.find((lens) => lens.id === setupLens) ?? LENSES[0];
     return (
       <div className="content-page setup-page">
         <header className="page-heading">
@@ -1231,9 +1332,30 @@ export default function TarotApp() {
           <p>{t("newReading.subtitle")}</p>
         </header>
 
-        <section className="form-section">
+        <section className="setup-launch-panel" aria-labelledby="quick-start-title">
+          <div>
+            <p className="eyebrow">{t("newReading.quickStart")}</p>
+            <h2 id="quick-start-title">{selectedSpread.name[language]} · {t(selectedLens.name)}</h2>
+            <p>{t("newReading.quickStartBody")}</p>
+          </div>
+          <div className="setup-launch-actions">
+            <button className="primary-action" type="button" onClick={beginReading}>{t("newReading.begin")} →</button>
+            <button
+              className="secondary-action"
+              type="button"
+              aria-expanded={setupOptionsOpen}
+              aria-controls="setup-advanced-options"
+              onClick={() => setSetupOptionsOpen((open) => !open)}
+            >
+              {t(setupOptionsOpen ? "newReading.hideOptions" : "newReading.adjustOptions")}
+            </button>
+          </div>
+        </section>
+
+        <div id="setup-advanced-options" className={`setup-advanced${setupOptionsOpen ? " is-open" : ""}`} hidden={!setupOptionsOpen}>
+        <section className="form-section setup-choices">
           <div className="section-heading"><div><p className="step-number">01</p><h2>{t("newReading.chooseSpread")}</h2></div></div>
-          <div className="spread-grid">
+          <div className="spread-grid" role="group" aria-label={t("newReading.chooseSpread")}>
             {SPREAD_TEMPLATES.map((spread) => (
               <button
                 className={`spread-choice${setupSpreadId === spread.id ? " is-selected" : ""}`}
@@ -1241,8 +1363,10 @@ export default function TarotApp() {
                 key={spread.id}
                 aria-pressed={setupSpreadId === spread.id}
                 onClick={() => {
-                  setSetupSpreadId(spread.id);
-                  if (spread.id === "dual-aspect") setSetupLens("mixed");
+                  updateSetupDraft({
+                    spreadId: spread.id,
+                    ...(spread.id === "dual-aspect" ? { lens: "mixed" } : {}),
+                  });
                 }}
               >
                 <span className="spread-count">{spread.positions.length}</span>
@@ -1256,16 +1380,17 @@ export default function TarotApp() {
           </div>
         </section>
 
-        <section className="form-section">
+        <section className="form-section setup-choices">
           <div className="section-heading"><div><p className="step-number">02</p><h2>{t("newReading.chooseLens")}</h2></div></div>
-          <div className="lens-grid">
+          <div className="lens-grid" role="group" aria-label={t("newReading.chooseLens")}>
             {LENSES.map((lens) => (
               <button
                 className={`lens-choice${setupLens === lens.id ? " is-selected" : ""}`}
                 type="button"
                 key={lens.id}
                 aria-pressed={setupLens === lens.id}
-                onClick={() => setSetupLens(lens.id)}
+                disabled={setupSpreadId === "dual-aspect" && lens.id !== "mixed"}
+                onClick={() => updateSetupDraft({ lens: lens.id })}
               >
                 <strong>{t(lens.name)}</strong>
                 <small>{t(lens.description)}</small>
@@ -1273,6 +1398,7 @@ export default function TarotApp() {
             ))}
           </div>
         </section>
+        </div>
 
         <section className="form-section intention-section">
           <div className="section-heading"><div><p className="step-number">03</p><h2>{t("newReading.stepIntention")}</h2></div></div>
@@ -1283,7 +1409,7 @@ export default function TarotApp() {
             rows={4}
             value={setupQuestion}
             placeholder={t("newReading.questionPlaceholder")}
-            onChange={(event) => setSetupQuestion(event.target.value)}
+            onChange={(event) => updateSetupDraft({ question: event.target.value })}
           />
           <div className="begin-row">
             <p><span aria-hidden="true">●</span>{t("newReading.savedAsDraft")}</p>
@@ -1309,20 +1435,21 @@ export default function TarotApp() {
     const effectiveLens = activeCard?.combinedOnly
       ? "combined"
       : activePull.lensOverride ?? (activeReading.readingLens === "mixed" ? "combined" : activeReading.readingLens);
+    const missingCards = activeReading.pulls.filter((pull) => !pull.cardId).length;
 
     return (
       <div className="reading-page">
         <header className="reading-topbar">
-          <button className="icon-button" type="button" onClick={() => navigate("home")} aria-label={t("nav.back")}>‹</button>
+          <button className="icon-button" type="button" onClick={() => navigate(readingReturnScreen)} aria-label={t("nav.back")}>‹</button>
           <div>
             <p className="eyebrow">{activeReading.spreadSnapshot.name[language]}</p>
             <h1>{activeReading.question || t("reading.title")}</h1>
           </div>
-          <button className="icon-button" type="button" onClick={deleteActiveReading} aria-label={t("actions.delete")}>•••</button>
+          <button className="icon-button" type="button" onClick={deleteActiveReading} aria-label={t("actions.delete")}><span aria-hidden="true">⌫</span></button>
         </header>
 
         <div className="reading-status-line">
-          <span role="status" aria-live="polite" aria-atomic="true">
+          <span>
             <span className={`status-dot${saveStatus === "error" ? " is-error" : ""}`} aria-hidden="true" />
             {saveStatus === "saving" ? t("reading.saving") : saveStatus === "error" ? t("reading.saveFailed") : t("reading.autosaved")}
           </span>
@@ -1380,10 +1507,7 @@ export default function TarotApp() {
           <button
             className="artwork-button"
             type="button"
-            onClick={() => {
-              setCardAnnouncement("");
-              setPickerOpen(true);
-            }}
+            onClick={openCardPicker}
             aria-label={
               activeCard
                 ? `${t("reading.changeCard")}: ${cardName}`
@@ -1403,16 +1527,67 @@ export default function TarotApp() {
             {language === "nl" && activeCard && appState.settings.showEnglishCardNamesInDutch && (
               <p className="printed-title">{activeCard.prismaTitleEn} / {activeCard.cosmaTitleEn}</p>
             )}
-            <button className="text-action" type="button" onClick={() => setPickerOpen(true)}>
-              {activeCard ? t("reading.changeCard") : t("reading.addCard")}
-            </button>
           </div>
         </section>
+
+        {activeCard && (
+          <>
+            <section className="quick-card-controls" aria-label={t("reading.cardDetails")}>
+              <ControlGroup label={t("orientation.label")}>
+                {(["upright", "reversed"] as Orientation[]).map((orientation) => (
+                  <button
+                    key={orientation}
+                    type="button"
+                    aria-pressed={activePull.orientation === orientation}
+                    onClick={() => updateActivePull({ orientation })}
+                  >
+                    {t(orientation === "upright" ? "orientation.upright" : "orientation.reversed")}
+                  </button>
+                ))}
+              </ControlGroup>
+              <ControlGroup label={t("lenses.label")}>
+                {(["combined", "tarot", "oracle"] as const).map((lens) => (
+                  <button
+                    key={lens}
+                    type="button"
+                    disabled={activeCard.combinedOnly && lens !== "combined"}
+                    aria-pressed={effectiveLens === lens}
+                    onClick={() => updateActivePull({ lensOverride: lens })}
+                  >
+                    {t(lens === "combined" ? "lenses.combinedShort" : lens === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort")}
+                  </button>
+                ))}
+              </ControlGroup>
+            </section>
+            {activeCard.combinedOnly && <p className="field-note">{t("lenses.combinedOnly")}</p>}
+          </>
+        )}
+
+        <div className="card-action-row">
+          <button className={activeCard ? "secondary-action" : "primary-action"} type="button" onClick={openCardPicker}>
+            {activeCard ? t("reading.changeCard") : t("reading.addCard")}
+          </button>
+          {activeCard && (
+            <button className="secondary-action" type="button" onClick={() => setConfirmation({ kind: "remove-card" })}>
+              {t("reading.removeCard")}
+            </button>
+          )}
+        </div>
 
         <div className="position-navigation">
           <button type="button" disabled={activePullIndex === 0} onClick={() => showPull(activePullIndex - 1)}>← {t("actions.previous")}</button>
           <button type="button" disabled={activePullIndex === activeReading.pulls.length - 1} onClick={() => showPull(activePullIndex + 1)}>{t("actions.next")} →</button>
         </div>
+
+        {activeReading.status === "draft" && (
+          <div className="reading-completion-action">
+            <div>
+              <strong>{missingCards === 0 ? t("reading.completeReady") : t(missingCards === 1 ? "reading.cardsNeededOne" : "reading.cardsNeededMany", { count: missingCards })}</strong>
+              <small>{progress.complete}/{progress.total}</small>
+            </div>
+            <button className="primary-action" type="button" onClick={finishReading}>{t("reading.markComplete")}</button>
+          </div>
+        )}
 
         <button
           className="journal-peek"
@@ -1428,34 +1603,6 @@ export default function TarotApp() {
 
         {activeCard && (
           <section className="reading-controls">
-            <ControlGroup label={t("orientation.label")}>
-              {(["upright", "reversed"] as Orientation[]).map((orientation) => (
-                <button
-                  key={orientation}
-                  type="button"
-                  aria-pressed={activePull.orientation === orientation}
-                  onClick={() => updateActivePull({ orientation })}
-                >
-                  {t(orientation === "upright" ? "orientation.upright" : "orientation.reversed")}
-                </button>
-              ))}
-            </ControlGroup>
-
-            <ControlGroup label={t("lenses.label")}>
-              {(["combined", "tarot", "oracle"] as const).map((lens) => (
-                <button
-                  key={lens}
-                  type="button"
-                  disabled={activeCard.combinedOnly && lens !== "combined"}
-                  aria-pressed={effectiveLens === lens}
-                  onClick={() => updateActivePull({ lensOverride: lens })}
-                >
-                  {t(lens === "combined" ? "lenses.combinedShort" : lens === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort")}
-                </button>
-              ))}
-            </ControlGroup>
-            {activeCard.combinedOnly && <p className="field-note">{t("lenses.combinedOnly")}</p>}
-
             <ControlGroup label={t("reading.roleLabel")}>
               {(["primary", "jumper", "clarifier"] as PullRole[]).map((role) => (
                 <button
@@ -1511,6 +1658,17 @@ export default function TarotApp() {
             <div><p className="eyebrow">{t("journal.title")}</p><h2>{t("reading.summaryLabel")}</h2></div>
             <span>{formatDate(activeReading.performedAt, language, activeReading.timezone)}</span>
           </div>
+          <label className="field-label" htmlFor="reading-question-edit">{t("reading.editQuestion")}</label>
+          <input
+            id="reading-question-edit"
+            className="text-input"
+            value={activeReading.question}
+            placeholder={t("newReading.questionPlaceholder")}
+            onChange={(event) => updateReading(activeReading.id, (reading) => ({
+              ...reading,
+              question: event.target.value,
+            }))}
+          />
           <label className="field-label" htmlFor="reading-reflection">{t("reading.summaryLabel")}</label>
           <textarea
             id="reading-reflection"
@@ -1554,16 +1712,15 @@ export default function TarotApp() {
                 id="later-reflection"
                 className="text-field"
                 rows={3}
-                value={reflectionDrafts[activeReading.id] ?? ""}
+                value={activeReading.laterReflectionDraft ?? ""}
                 placeholder={t("reading.laterReflectionPrompt")}
-                onChange={(event) =>
-                  setReflectionDrafts((current) => ({
-                    ...current,
-                    [activeReading.id]: event.target.value,
-                  }))
-                }
+                onChange={(event) => updateReading(activeReading.id, (reading) => ({
+                  ...reading,
+                  laterReflectionDraft: event.target.value,
+                }))}
               />
-              <button className="secondary-action" type="button" disabled={!(reflectionDrafts[activeReading.id] ?? "").trim()} onClick={addLaterReflection}>
+              <p className="field-note">{t("reading.reflectionDraftSaved")}</p>
+              <button className="secondary-action" type="button" disabled={!(activeReading.laterReflectionDraft ?? "").trim()} onClick={addLaterReflection}>
                 {t("reading.addReflection")}
               </button>
             </div>
@@ -1575,7 +1732,10 @@ export default function TarotApp() {
                 <button className="primary-action" type="button" onClick={finishReading}>{t("reading.markComplete")}</button>
               </>
             ) : (
-              <button className="primary-action" type="button" onClick={() => navigate("journal")}>← {t("journal.title")}</button>
+              <>
+                <button className="secondary-action" type="button" onClick={reopenReading}>{t("reading.reopen")}</button>
+                <button className="primary-action" type="button" onClick={() => navigate("journal")}>← {t("journal.title")}</button>
+              </>
             )}
           </div>
         </section>
@@ -1606,7 +1766,7 @@ export default function TarotApp() {
             ))}
           </div>
         </div>
-        <p className="result-count">
+        <p className="result-count" role="status" aria-live="polite" aria-atomic="true">
           {t(filteredReadings.length === 1 ? "journal.resultsOne" : "journal.resultsMany", { count: filteredReadings.length })}
         </p>
         {filteredReadings.length ? (
@@ -1618,7 +1778,14 @@ export default function TarotApp() {
             <span aria-hidden="true">◇</span>
             <h2>{journalSearch || journalFilter !== "all" ? t("journal.noResultsTitle") : t("journal.emptyTitle")}</h2>
             <p>{journalSearch || journalFilter !== "all" ? t("journal.noResultsBody") : t("journal.emptyBody")}</p>
-            <button className="primary-action" type="button" onClick={() => navigate("setup")}>{t("home.startReading")}</button>
+            {journalSearch || journalFilter !== "all" ? (
+              <button className="secondary-action" type="button" onClick={() => {
+                setJournalSearch("");
+                setJournalFilter("all");
+              }}>{t("journal.clearFilters")}</button>
+            ) : (
+              <button className="primary-action" type="button" onClick={() => navigate("setup")}>{t("home.startReading")}</button>
+            )}
           </div>
         )}
       </div>
@@ -1808,6 +1975,10 @@ export default function TarotApp() {
         ? t("reading.noDuplicateTitle")
         : confirmation.kind === "delete"
           ? t("reading.deleteTitle")
+          : confirmation.kind === "remove-card"
+            ? t("reading.removeCardTitle")
+            : confirmation.kind === "remove-position"
+              ? t("reading.removePositionTitle")
           : confirmation.kind === "restore"
             ? t("importExport.replaceTitle")
             : t("privacy.clearData");
@@ -1816,6 +1987,10 @@ export default function TarotApp() {
         ? t("reading.noDuplicateBody")
         : confirmation.kind === "delete"
           ? t("reading.deleteBody")
+          : confirmation.kind === "remove-card"
+            ? t("reading.removeCardBody")
+            : confirmation.kind === "remove-position"
+              ? t("reading.removePositionBody")
           : confirmation.kind === "restore"
             ? t("importExport.replaceBody")
             : t("settings.resetBody");
@@ -1878,6 +2053,12 @@ export default function TarotApp() {
             {confirmation.kind === "delete" && (
               <button className="danger-action" type="button" onClick={confirmDeleteActiveReading}>{t("actions.delete")}</button>
             )}
+            {confirmation.kind === "remove-card" && (
+              <button className="danger-action" type="button" onClick={clearActiveCard}>{t("reading.removeCard")}</button>
+            )}
+            {confirmation.kind === "remove-position" && (
+              <button className="danger-action" type="button" onClick={confirmRemoveFreeformPosition}>{t("spreads.removePosition")}</button>
+            )}
             {confirmation.kind === "restore" && (
               <button className="danger-action" type="button" onClick={() => confirmRestoreBackup(confirmation.backup)}>{t("actions.replace")}</button>
             )}
@@ -1898,11 +2079,30 @@ export default function TarotApp() {
             <div><p className="eyebrow">{activePosition?.name[language]}</p><h2 id="card-picker-title">{t("cardPicker.title")}</h2></div>
             <button className="icon-button" type="button" aria-label={t("nav.close")} onClick={() => setPickerOpen(false)}>×</button>
           </header>
-          <label className="search-field card-search">
-            <span aria-hidden="true">⌕</span>
-            <span className="visually-hidden">{t("cardPicker.searchLabel")}</span>
-            <input ref={pickerSearchInputRef} value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} placeholder={t("cardPicker.searchPlaceholder")} />
-          </label>
+          <div className="picker-search-wrap">
+            <label className="search-field card-search">
+              <span aria-hidden="true">⌕</span>
+              <span className="visually-hidden">{t("cardPicker.searchLabel")}</span>
+              <input
+                ref={pickerSearchInputRef}
+                value={pickerSearch}
+                onChange={(event) => setPickerSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && filteredCards.length === 1) {
+                    event.preventDefault();
+                    selectCard(filteredCards[0]);
+                  }
+                }}
+                placeholder={t("cardPicker.searchPlaceholder")}
+              />
+            </label>
+            {pickerSearch && (
+              <button className="picker-clear" type="button" aria-label={t("cardPicker.clearSearch")} onClick={() => {
+                setPickerSearch("");
+                pickerSearchInputRef.current?.focus({ preventScroll: true });
+              }}>×</button>
+            )}
+          </div>
           <div className="filter-row" role="group" aria-label={t("cardPicker.filterLabel")}>
             {(["all", "major", "minor"] as CardFilter[]).map((filter) => (
               <button key={filter} type="button" aria-pressed={cardFilter === filter} onClick={() => setCardFilter(filter)}>
@@ -1924,19 +2124,26 @@ export default function TarotApp() {
           <div className="card-results">
             {filteredCards.map((card) => {
               const used = usedCardIds.has(card.id) && activePull?.cardId !== card.id;
+              const selected = activePull?.cardId === card.id;
               return (
-                <button key={card.id} type="button" className={activePull?.cardId === card.id ? "is-selected" : ""} onClick={() => selectCard(card)}>
+                <button key={card.id} type="button" className={selected ? "is-selected" : ""} aria-pressed={selected} onClick={() => selectCard(card)}>
                   <span className="card-result-number">{String(card.order + 1).padStart(2, "0")}</span>
                   <span className="card-result-titles">
                     <strong>{getCardDisplayName(card, language)}</strong>
                     {language === "nl" && appState.settings.showEnglishCardNamesInDutch && <small>{card.prismaTitleEn} / {card.cosmaTitleEn}</small>}
                   </span>
-                  {card.combinedOnly ? <em>{t("cardPicker.combinedOnly")}</em> : used ? <em>{t("cardPicker.alreadyUsed")}</em> : <span aria-hidden="true">＋</span>}
+                  {selected ? (
+                    <span className="selected-card-state"><span aria-hidden="true">✓</span>{t("cardPicker.selected")}</span>
+                  ) : card.combinedOnly ? <em>{t("cardPicker.combinedOnly")}</em> : used ? <em>{t("cardPicker.alreadyUsed")}</em> : <span aria-hidden="true">＋</span>}
                 </button>
               );
             })}
             {!filteredCards.length && (
-              <div className="empty-state"><h3>{t("cardPicker.noResultsTitle")}</h3><p>{t("cardPicker.noResultsBody")}</p></div>
+              <div className="empty-state">
+                <h3>{t("cardPicker.noResultsTitle")}</h3>
+                <p>{t("cardPicker.noResultsBody")}</p>
+                <button className="secondary-action" type="button" onClick={resetPickerState}>{t("cardPicker.clearSearch")}</button>
+              </div>
             )}
           </div>
         </section>

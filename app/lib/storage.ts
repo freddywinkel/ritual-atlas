@@ -1,4 +1,4 @@
-import type { AppState, BackupPayload, Language } from "../types";
+import type { AppState, BackupPayload, Language, ReadingLens } from "../types";
 import { CARDS } from "../data/cards";
 
 const DATABASE_NAME = "ritual-atlas";
@@ -39,6 +39,20 @@ export class StateConflictError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isReadingLens(value: unknown): value is ReadingLens {
+  return value === "combined" || value === "tarot" || value === "oracle" || value === "mixed";
+}
+
+function isSetupDraft(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.spreadId === "string" &&
+    value.spreadId.trim().length > 0 &&
+    isReadingLens(value.lens) &&
+    typeof value.question === "string"
+  );
 }
 
 function isLocalizedText(value: unknown): boolean {
@@ -193,10 +207,7 @@ function isReading(value: unknown, allowIncompleteComplete = false): boolean {
     isValidIsoTimestamp(value.performedAt) &&
     typeof value.timezone === "string" &&
     (value.status === "draft" || value.status === "complete") &&
-    (value.readingLens === "combined" ||
-      value.readingLens === "tarot" ||
-      value.readingLens === "oracle" ||
-      value.readingLens === "mixed") &&
+    isReadingLens(value.readingLens) &&
     typeof value.question === "string" &&
     typeof spread.id === "string" &&
     isLocalizedText(spread.name) &&
@@ -214,6 +225,9 @@ function isReading(value: unknown, allowIncompleteComplete = false): boolean {
     Array.isArray(value.tags) &&
     value.tags.every((tag) => typeof tag === "string") &&
     typeof value.initialReflection === "string" &&
+    (!("laterReflectionDraft" in value) ||
+      value.laterReflectionDraft === undefined ||
+      typeof value.laterReflectionDraft === "string") &&
     reflectionsAreValid &&
     new Set(reflectionIds).size === reflectionIds.length &&
     (value.revisitDate === null || isValidDateOnly(value.revisitDate))
@@ -245,6 +259,9 @@ function isAppState(value: unknown, allowLegacyIncompleteComplete = false): valu
     typeof value.settings.showEnglishCardNamesInDutch === "boolean" &&
     value.readings.every((reading) => isReading(reading, allowLegacyIncompleteComplete)) &&
     new Set(readingIds).size === value.readings.length &&
+    (!("setupDraft" in value) ||
+      value.setupDraft === undefined ||
+      isSetupDraft(value.setupDraft)) &&
     (activeDraftIsValid ||
       (allowLegacyIncompleteComplete &&
         (value.activeDraftId === null || typeof value.activeDraftId === "string")))
@@ -315,6 +332,11 @@ export function createInitialState(): AppState {
     },
     readings: [],
     activeDraftId: null,
+    setupDraft: {
+      spreadId: "one-card",
+      lens: "combined",
+      question: "",
+    },
   };
 }
 

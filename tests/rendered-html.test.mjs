@@ -347,7 +347,7 @@ test("ships the complete local-first PWA surface", async () => {
   assert.match(verifyOffline, /persistedDraft/);
   assert.match(verifyOffline, /navigationUi/);
   assert.match(verifyOffline, /sameScreenReset/);
-  assert.match(verifyOffline, /hero-actions \.secondary-action/);
+  assert.match(verifyOffline, /Continue draft/);
   assert.match(verifyOffline, /Emulation\.setDeviceMetricsOverride/);
   assert.match(verifyOffline, /Emulation\.setTouchEmulationEnabled/);
   assert.match(verifyOffline, /Input\.dispatchTouchEvent/);
@@ -502,10 +502,13 @@ test("guards audited persistence, journal, spread, and security behavior", async
   assert.match(styles, /\.position-map \{[\s\S]*?touch-action: pan-x pan-y/);
   assert.match(styles, /@media \(max-height: 480px\) and \(orientation: landscape\)/);
   assert.match(styles, /\.card-results \{ min-height: 132px; \}/);
+  assert.match(styles, /\.card-picker \.filter-row \{ min-height: 44px;/);
   assert.match(styles, /\.mobile-brand \{ min-height: 44px/);
   assert.match(styles, /\.language-shortcut \{ width: 44px; height: 44px/);
   assert.match(styles, /\.card-result-titles small \{[\s\S]*?white-space: normal/);
   assert.match(styles, /\.confirmation-dialog \{[\s\S]*?max-height: calc\(100dvh - 16px\);[\s\S]*?overflow-y: auto/);
+  assert.match(styles, /\.screen-reading \.position-banner \{[\s\S]*?position: static;/);
+  assert.match(styles, /\.quick-card-controls \.segmented-control \{ height: auto; min-height: 54px; \}/);
   assert.match(artwork, /draggable=\{false\}/);
   assert.match(styles, /\.card-artwork img \{[\s\S]*?pointer-events: none;[\s\S]*?-webkit-user-drag: none/);
 
@@ -529,9 +532,10 @@ test("guards audited persistence, journal, spread, and security behavior", async
     "function addLaterReflection()",
     "async function exportBackup()",
   );
-  assert.match(reflectionUpdate, /reflectionDrafts\[activeReading\.id\]/);
-  assert.match(reflectionUpdate, /delete next\[activeReading\.id\]/);
-  assert.match(component, /value=\{reflectionDrafts\[activeReading\.id\] \?\? ""\}/);
+  assert.match(reflectionUpdate, /activeReading\.laterReflectionDraft \?\? ""/);
+  assert.match(reflectionUpdate, /laterReflectionDraft: ""/);
+  assert.match(component, /value=\{activeReading\.laterReflectionDraft \?\? ""\}/);
+  assert.match(component, /laterReflectionDraft: event\.target\.value/);
 
   const dateFormatter = sourceSection(component, "function formatDate(", "function toSpreadSnapshot(");
   assert.match(dateFormatter, /language === "nl" \? "nl-NL" : "en-GB"/);

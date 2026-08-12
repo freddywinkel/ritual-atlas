@@ -64,6 +64,7 @@ export interface Reading {
   pulls: Pull[];
   tags: string[];
   initialReflection: string;
+  laterReflectionDraft?: string;
   laterReflections: LaterReflection[];
   revisitDate: string | null;
 }
@@ -79,6 +80,11 @@ export interface AppState {
   settings: AppSettings;
   readings: Reading[];
   activeDraftId: string | null;
+  setupDraft?: {
+    spreadId: string;
+    lens: ReadingLens;
+    question: string;
+  };
 }
 
 export interface BackupPayload {

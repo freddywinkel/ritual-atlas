@@ -125,6 +125,46 @@ test("accepts strict timestamps, date-only revisit dates, finite layout metadata
   assert.equal(parsed.state.readings[0].pulls[1].cardId, regularCardId);
 });
 
+test("accepts legacy states without optional entry drafts and creates explicit setup defaults", () => {
+  const legacyState = makeState();
+  const parsed = parsePayload(makePayload(legacyState));
+
+  assert.equal("setupDraft" in parsed.state, false);
+  assert.equal("laterReflectionDraft" in parsed.state.readings[0], false);
+  assert.deepEqual(storage.createInitialState().setupDraft, {
+    spreadId: "one-card",
+    lens: "combined",
+    question: "",
+  });
+});
+
+test("rejects malformed setup and later-reflection drafts", () => {
+  const setupDraftCases = [
+    ["null setup draft", null],
+    ["non-object setup draft", "one-card"],
+    ["missing spread ID", { lens: "combined", question: "" }],
+    ["empty spread ID", { spreadId: "  ", lens: "combined", question: "" }],
+    ["invalid setup lens", { spreadId: "one-card", lens: "invalid", question: "" }],
+    ["non-string setup question", { spreadId: "one-card", lens: "combined", question: 42 }],
+  ];
+  for (const [name, setupDraft] of setupDraftCases) {
+    const payload = makePayload();
+    payload.state.setupDraft = setupDraft;
+    assert.throws(() => parsePayload(payload), /not a valid Ritual Atlas backup/, name);
+  }
+
+  const reflectionDraftCases = [
+    ["null reflection draft", null],
+    ["numeric reflection draft", 42],
+    ["object reflection draft", { text: "Draft" }],
+  ];
+  for (const [name, laterReflectionDraft] of reflectionDraftCases) {
+    const payload = makePayload();
+    payload.state.readings[0].laterReflectionDraft = laterReflectionDraft;
+    assert.throws(() => parsePayload(payload), /not a valid Ritual Atlas backup/, name);
+  }
+});
+
 test("rejects malformed or rollover timestamp and date-only strings", () => {
   const cases = [
     ["ambiguous exported timestamp", (payload) => { payload.exportedAt = "08/11/2026"; }],
@@ -386,6 +426,34 @@ test("saves app-created drafts with optional undefined metadata", async () => {
   globalThis.indexedDB = fake.indexedDB;
   assert.equal(await storage.saveState(state, 0), 1);
   assert.deepEqual((await storage.loadStateSnapshot()).state, state);
+});
+
+test("persists setup and later-reflection drafts through backup restore and storage reload", async () => {
+  const state = makeState();
+  state.setupDraft = {
+    spreadId: "dual-aspect",
+    lens: "mixed",
+    question: "What is still unfolding?",
+  };
+  state.readings[0].laterReflectionDraft = "A thought to finish later.";
+
+  const restoredBackup = storage.parseBackup(JSON.stringify(storage.makeBackup(state)));
+  assert.deepEqual(restoredBackup.state.setupDraft, state.setupDraft);
+  assert.equal(
+    restoredBackup.state.readings[0].laterReflectionDraft,
+    state.readings[0].laterReflectionDraft,
+  );
+
+  const fake = createFakeIndexedDb();
+  globalThis.indexedDB = fake.indexedDB;
+  assert.equal(await storage.saveState(state, 0), 1);
+  const reloaded = await storage.loadStateSnapshot();
+  assert.equal(reloaded.revision, 1);
+  assert.deepEqual(reloaded.state.setupDraft, state.setupDraft);
+  assert.equal(
+    reloaded.state.readings[0].laterReflectionDraft,
+    state.readings[0].laterReflectionDraft,
+  );
 });
 
 test("surfaces aborted reads and clears instead of leaving storage promises pending", async () => {

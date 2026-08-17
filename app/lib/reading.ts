@@ -30,6 +30,7 @@ export function createReading(
     firstSeenAspect: null,
     firstImpression: "",
     interpretation: "",
+    interpretationCardId: null,
   }));
 
   return {
@@ -56,6 +57,24 @@ export function readingProgress(reading: Reading): { complete: number; total: nu
     complete: reading.pulls.filter((pull) => pull.cardId).length,
     total: reading.pulls.length,
   };
+}
+
+export function getEffectivePullLens(
+  reading: Reading,
+  pull: Pull,
+  defaultLens?: Exclude<ReadingLens, "mixed">,
+  combinedOnly = false,
+): Exclude<ReadingLens, "mixed"> {
+  if (combinedOnly) return "combined";
+  if (reading.readingLens === "combined") {
+    return pull.lensOverride === "tarot" || pull.lensOverride === "oracle"
+      ? pull.lensOverride
+      : "combined";
+  }
+  if (reading.readingLens === "mixed") {
+    return pull.lensOverride ?? defaultLens ?? "combined";
+  }
+  return pull.lensOverride ?? reading.readingLens;
 }
 
 export function isReadingComplete(reading: Reading): boolean {

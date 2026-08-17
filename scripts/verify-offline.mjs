@@ -532,7 +532,7 @@ try {
       .find((button) => /^Start (?:a|another) Reading$/.test(button.textContent.trim()))?.click();
     await waitForHeading("New Reading");
     [...document.querySelectorAll("button")]
-      .find((button) => button.textContent.includes("Adjust spread and lens"))?.click();
+      .find((button) => button.textContent.includes("Adjust spread and reading mode"))?.click();
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if (!document.querySelector("#setup-advanced-options")?.hidden) break;
       await wait(50);
@@ -826,7 +826,7 @@ try {
     const headerBottom = document.querySelector(".mobile-header")?.getBoundingClientRect().bottom ?? 0;
     const quickRect = quickBegin?.getBoundingClientRect();
 
-    button("Adjust spread and lens")?.click();
+    button("Adjust spread and reading mode")?.click();
     await waitFor(
       () => !document.querySelector("#setup-advanced-options")?.hidden,
       "expanded spread and lens options",
@@ -835,7 +835,7 @@ try {
     const oneCard = [...document.querySelectorAll(".spread-choice")]
       .find((candidate) => text(candidate.querySelector("strong")) === "One Card");
     const tarot = [...document.querySelectorAll(".lens-choice")]
-      .find((candidate) => text(candidate.querySelector("strong")) === "Prisma · Tarot");
+      .find((candidate) => text(candidate.querySelector("strong")) === "Tarot deck");
     oneCard?.click();
     tarot?.click();
     const question = document.querySelector("#reading-question");
@@ -863,7 +863,7 @@ try {
     controlFlowSetup.quickBegin.top < controlFlowSetup.headerBottom ||
     controlFlowSetup.quickBegin.bottom > controlFlowSetup.bottomNavTop ||
     controlFlowSetup.spread !== "One Card" ||
-    controlFlowSetup.lens !== "Prisma · Tarot" ||
+    controlFlowSetup.lens !== "Tarot deck" ||
     controlFlowSetup.question !== "Control flow persistence check"
   ) {
     throw new Error(`Quick setup did not provide a visible, ready entry path: ${JSON.stringify(controlFlowSetup)}`);
@@ -899,6 +899,50 @@ try {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
     const selectedChoice = (selector) => document.querySelector(selector + '[aria-pressed="true"] strong')?.textContent?.trim();
+    const readDeckProjection = async (picker, nativeQuery, crossDeckQuery) => {
+      const search = picker.querySelector("input");
+      const titles = () => [...picker.querySelectorAll(".card-results > button strong")]
+        .map((element) => text(element));
+      const initialTitles = titles();
+      const projection = {
+        resultCount: Number(text(picker.querySelector(".picker-result-count")).match(/\\d+/)?.[0] ?? -1),
+        rowCount: initialTitles.length,
+        fixedDeck: text(picker.querySelector(".picker-deck-label")),
+        hasDeckSwitch: Boolean(picker.querySelector(".deck-switch")),
+        hasPairedTitle: initialTitles.some((title) => title.includes(" / ")),
+        hasCombinedOnlyRow: Boolean(picker.querySelector(".card-results em")),
+      };
+
+      setInputValue(search, nativeQuery);
+      await wait(80);
+      projection.nativeMatches = titles();
+      setInputValue(search, crossDeckQuery);
+      await wait(80);
+      projection.crossDeckMatches = titles();
+      setInputValue(search, "79");
+      await wait(80);
+      projection.card79Matches = titles();
+      return projection;
+    };
+    const deleteCurrentReading = async (label) => {
+      button("Delete")?.click();
+      const dialog = await waitFor(() => document.querySelector(".confirmation-dialog"), label + " delete confirmation");
+      button("Delete", dialog)?.click();
+      await waitFor(() => document.querySelector("h1")?.textContent?.trim() === "Journal", label + " deletion");
+      [...document.querySelectorAll(".bottom-nav button")]
+        .find((candidate) => text(candidate).includes("Home"))?.click();
+      await waitFor(
+        () => document.querySelector("h1")?.textContent?.trim() === "What would you like to explore?",
+        "Home after " + label + " deletion",
+      );
+    };
+    const openSetup = async (label) => {
+      button("Start a Reading")?.click();
+      await waitFor(() => document.querySelector("h1")?.textContent?.trim() === "New Reading", label + " setup");
+      const options = document.querySelector("#setup-advanced-options");
+      if (options?.hidden) button("Adjust spread and reading mode")?.click();
+      await waitFor(() => !document.querySelector("#setup-advanced-options")?.hidden, label + " setup options");
+    };
 
     await waitFor(
       () => document.querySelector("h1")?.textContent?.trim() === "What would you like to explore?",
@@ -915,37 +959,76 @@ try {
       question: document.querySelector("#reading-question")?.value,
     };
 
-    button("Adjust spread and lens")?.click();
+    [...document.querySelectorAll("button")]
+      .find((candidate) => text(candidate) === "Begin Reading →")?.click();
     await waitFor(
-      () => !document.querySelector("#setup-advanced-options")?.hidden,
-      "expanded persisted options",
+      () => document.querySelector("h1")?.textContent?.trim() === "Control flow persistence check",
+      "Tarot projection reading",
     );
+    button("Complete Reading")?.click();
+    const tarotProjectionPicker = await waitFor(
+      () => document.querySelector(".card-picker"),
+      "Tarot projection picker",
+    );
+    const tarotProjection = await readDeckProjection(tarotProjectionPicker, "magier", "crow");
+    tarotProjectionPicker.querySelector('button[aria-label="Close"]')?.click();
+    await waitFor(() => !document.querySelector(".card-picker"), "Tarot projection picker close");
+    await deleteCurrentReading("Tarot projection reading");
+
+    await openSetup("Oracle projection");
 
     const dualAspect = [...document.querySelectorAll(".spread-choice")]
       .find((candidate) => text(candidate.querySelector("strong")) === "Dual Aspect");
     dualAspect?.click();
-    await waitFor(() => selectedChoice(".lens-choice") === "Mixed", "Dual Aspect Mixed lens");
-    const combined = [...document.querySelectorAll(".lens-choice")]
-      .find((candidate) => text(candidate.querySelector("strong")) === "Mirra · Combined");
-    combined?.click();
+    await waitFor(() => selectedChoice(".lens-choice") === "Mixed faces", "Dual Aspect Mixed deck");
     await wait(80);
     const dualAspectLens = {
       selected: selectedChoice(".lens-choice"),
-      combinedDisabled: Boolean(combined?.disabled),
+      choiceCount: document.querySelectorAll(".lens-choice").length,
+      mirraPresent: [...document.querySelectorAll(".lens-choice")]
+        .some((candidate) => text(candidate.querySelector("strong")) === "Mirra · Tarot + Oracle"),
     };
 
     const oneCard = [...document.querySelectorAll(".spread-choice")]
       .find((candidate) => text(candidate.querySelector("strong")) === "One Card");
     oneCard?.click();
     await wait(80);
-    combined?.click();
+    const oracle = [...document.querySelectorAll(".lens-choice")]
+      .find((candidate) => text(candidate.querySelector("strong")) === "Oracle deck");
+    oracle?.click();
+    setInputValue(document.querySelector("#reading-question"), "Oracle deck projection check");
     await wait(80);
-    const begin = [...document.querySelectorAll("button")]
-      .find((candidate) => text(candidate) === "Begin Reading →");
-    begin?.click();
+    [...document.querySelectorAll("button")]
+      .find((candidate) => text(candidate) === "Begin Reading →")?.click();
+    await waitFor(
+      () => document.querySelector("h1")?.textContent?.trim() === "Oracle deck projection check",
+      "Oracle projection reading",
+    );
+    button("Complete Reading")?.click();
+    const oracleProjectionPicker = await waitFor(
+      () => document.querySelector(".card-picker"),
+      "Oracle projection picker",
+    );
+    const oracleProjection = await readDeckProjection(oracleProjectionPicker, "crow", "magier");
+    oracleProjectionPicker.querySelector('button[aria-label="Close"]')?.click();
+    await waitFor(() => !document.querySelector(".card-picker"), "Oracle projection picker close");
+    await deleteCurrentReading("Oracle projection reading");
+
+    await openSetup("Mirra control flow");
+    const mirraOneCard = [...document.querySelectorAll(".spread-choice")]
+      .find((candidate) => text(candidate.querySelector("strong")) === "One Card");
+    mirraOneCard?.click();
+    await wait(80);
+    const mirra = [...document.querySelectorAll(".lens-choice")]
+      .find((candidate) => text(candidate.querySelector("strong")) === "Mirra · Tarot + Oracle");
+    mirra?.click();
+    setInputValue(document.querySelector("#reading-question"), "Control flow persistence check");
+    await wait(80);
+    [...document.querySelectorAll("button")]
+      .find((candidate) => text(candidate) === "Begin Reading →")?.click();
     await waitFor(
       () => document.querySelector("h1")?.textContent?.trim() === "Control flow persistence check",
-      "one-card reading",
+      "Mirra one-card reading",
     );
 
     button("Complete Reading")?.click();
@@ -987,19 +1070,66 @@ try {
     reopenedPicker.querySelector('button[aria-label="Close"]')?.click();
     await waitFor(() => !document.querySelector(".card-picker"), "picker close before card reset");
 
-    const uprightCombinedMeaning = text(await waitFor(
-      () => document.querySelector(".interpretation-meaning"),
-      "upright combined interpretation",
-    ));
-    button("Reversed")?.click();
+    const revealButton = button("Reveal companion interpretation");
+    const revealGate = {
+      meaningInitiallyPresent: Boolean(document.querySelector(".interpretation-meaning")),
+      buttonDisabledInitially: Boolean(revealButton?.disabled),
+      expandedInitially: revealButton?.getAttribute("aria-expanded"),
+    };
+    setInputValue(document.querySelector("#card-interpretation"), "   ");
     await wait(80);
-    const reversedCombinedMeaning = text(document.querySelector(".interpretation-meaning"));
+    revealGate.whitespaceStillDisabled = Boolean(button("Reveal companion interpretation")?.disabled);
+    setInputValue(
+      document.querySelector("#card-interpretation"),
+      "My own reading comes before the companion interpretation.",
+    );
+    await waitFor(
+      () => !button("Reveal companion interpretation")?.disabled,
+      "reader interpretation unlock",
+    );
+    revealGate.buttonEnabledAfterText = !button("Reveal companion interpretation")?.disabled;
+    revealGate.meaningBeforeReveal = Boolean(document.querySelector(".interpretation-meaning"));
+
+    const artwork = document.querySelector(".artwork-button");
+    const mirraArtworkBefore = {
+      face: artwork?.getAttribute("data-card-face"),
+      title: text(document.querySelector(".card-title-block h2")),
+      pickerOpen: Boolean(document.querySelector(".card-picker")),
+    };
+    artwork?.click();
+    await waitFor(
+      () => document.querySelector(".artwork-button")?.getAttribute("data-card-face") === "oracle",
+      "Mirra artwork face toggle",
+    );
+    const mirraArtworkAfter = {
+      face: document.querySelector(".artwork-button")?.getAttribute("data-card-face"),
+      title: text(document.querySelector(".card-title-block h2")),
+      pickerOpen: Boolean(document.querySelector(".card-picker")),
+    };
+    const mirraArtworkToggle = { before: mirraArtworkBefore, after: mirraArtworkAfter };
+
     button("Tarot")?.click();
+    await waitFor(
+      () => document.querySelector(".artwork-button")?.getAttribute("data-card-face") === "tarot",
+      "Tarot face restored",
+    );
+    button("Reveal companion interpretation")?.click();
+    const uprightTarotMeaning = text(await waitFor(
+      () => document.querySelector(".interpretation-meaning"),
+      "upright Tarot interpretation",
+    ));
+    revealGate.expandedAfterReveal = button("Hide companion interpretation")?.getAttribute("aria-expanded");
+    button("Reversed")?.click();
     await wait(80);
     const reversedTarotMeaning = text(document.querySelector(".interpretation-meaning"));
     button("Oracle")?.click();
     await wait(80);
     const reversedOracleMeaning = text(document.querySelector(".interpretation-meaning"));
+    button("Upright")?.click();
+    await wait(80);
+    const uprightOracleMeaning = text(document.querySelector(".interpretation-meaning"));
+    button("Reversed")?.click();
+    await wait(80);
     const oracleMode = text(document.querySelector(".interpretation-mode"));
 
     button("Back")?.click();
@@ -1023,9 +1153,9 @@ try {
     await waitFor(() => document.querySelector(".interpretation-meaning"), "English interpretation restored");
 
     const interpretation = {
-      uprightCombinedMeaning,
-      reversedCombinedMeaning,
+      uprightTarotMeaning,
       reversedTarotMeaning,
+      uprightOracleMeaning,
       reversedOracleMeaning,
       oracleMode,
       dutchOracleMeaning,
@@ -1046,17 +1176,36 @@ try {
       () => document.querySelector(".card-title-block h2")?.textContent?.includes("Garden Chimes"),
       "combined-only card",
     );
+    setInputValue(document.querySelector("#card-interpretation"), "");
+    await wait(80);
+    const combinedRevealInitiallyDisabled = Boolean(button("Reveal companion interpretation")?.disabled);
+    const combinedMeaningInitiallyPresent = Boolean(document.querySelector(".interpretation-meaning"));
+    setInputValue(
+      document.querySelector("#card-interpretation"),
+      "My own reading of the unique Mirra card.",
+    );
+    await waitFor(
+      () => !button("Reveal companion interpretation")?.disabled,
+      "combined-only reader interpretation unlock",
+    );
+    button("Reveal companion interpretation")?.click();
+    await waitFor(() => document.querySelector(".interpretation-meaning"), "combined-only interpretation");
     const combinedOnly = {
       cardName: text(document.querySelector(".card-title-block h2")),
-      combinedPressed: button("Combined")?.getAttribute("aria-pressed"),
-      tarotDisabled: Boolean(button("Tarot")?.disabled),
-      oracleDisabled: Boolean(button("Oracle")?.disabled),
+      artworkFace: document.querySelector(".artwork-button")?.getAttribute("data-card-face") ?? null,
+      artworkSwitchable: document.querySelector(".artwork-button")?.classList.contains("artwork-button--switchable") ?? false,
+      faceControlCount: document.querySelector('.quick-card-controls [role="group"][aria-label="Card face"]')
+        ?.querySelectorAll("button").length ?? 0,
+      note: text(document.querySelector(".field-note")),
+      revealInitiallyDisabled: combinedRevealInitiallyDisabled,
+      meaningInitiallyPresent: combinedMeaningInitiallyPresent,
       meaning: text(document.querySelector(".interpretation-meaning")),
       mode: text(document.querySelector(".interpretation-mode")),
     };
 
-    button("Change card")?.click();
+    document.querySelector(".artwork-button")?.click();
     const threeAgainPicker = await waitFor(() => document.querySelector(".card-picker"), "picker after card 79");
+    combinedOnly.artworkOpenedPicker = Boolean(threeAgainPicker);
     setInputValue(threeAgainPicker.querySelector("input"), "three w");
     await wait(80);
     [...threeAgainPicker.querySelectorAll(".card-results > button")]
@@ -1101,12 +1250,28 @@ try {
     await waitFor(() => !document.querySelector(".card-picker"), "card reselection");
     const resetDefaults = {
       upright: button("Upright")?.getAttribute("aria-pressed"),
-      combined: button("Combined")?.getAttribute("aria-pressed"),
+      tarot: button("Tarot")?.getAttribute("aria-pressed"),
       primary: button("Main card")?.getAttribute("aria-pressed"),
       firstSeen: [...document.querySelectorAll('[role="group"] button[aria-pressed="true"]')]
         .some((candidate) => ["Prisma image", "Cosma image", "Both / shifting", "Unclear"].includes(text(candidate))),
       impression: document.querySelector("#card-impression")?.value,
       interpretation: document.querySelector("#card-interpretation")?.value,
+    };
+
+    setInputValue(
+      document.querySelector("#card-interpretation"),
+      "Reader interpretation survives reload",
+    );
+    await waitFor(
+      () => !button("Reveal companion interpretation")?.disabled,
+      "reload interpretation unlock",
+    );
+    button("Reveal companion interpretation")?.click();
+    await waitFor(() => document.querySelector(".interpretation-meaning"), "pre-reload companion reveal");
+    const revealBeforeCompletion = {
+      readerText: document.querySelector("#card-interpretation")?.value,
+      meaningPresent: Boolean(document.querySelector(".interpretation-meaning")),
+      expanded: button("Hide companion interpretation")?.getAttribute("aria-expanded"),
     };
 
     button("Complete Reading")?.click();
@@ -1132,14 +1297,19 @@ try {
 
     return {
       persistedSetup,
+      tarotProjection,
+      oracleProjection,
       dualAspectLens,
       missingRecovery,
       searchCases,
       selectedSemantics,
+      revealGate,
+      mirraArtworkToggle,
       interpretation,
       combinedOnly,
       removed,
       resetDefaults,
+      revealBeforeCompletion,
       reopened,
       laterReflection: document.querySelector("#later-reflection")?.value,
     };
@@ -1149,9 +1319,29 @@ try {
     controlFlowReading.searchCases[query]?.some((name) => name.includes(expected));
   if (
     controlFlowReading.persistedSetup.spread !== "One Card" ||
-    controlFlowReading.persistedSetup.lens !== "Prisma · Tarot" ||
+    controlFlowReading.persistedSetup.lens !== "Tarot deck" ||
     controlFlowReading.persistedSetup.question !== "Control flow persistence check" ||
-    controlFlowReading.dualAspectLens.selected !== "Mixed" ||
+    controlFlowReading.tarotProjection.resultCount !== 78 ||
+    controlFlowReading.tarotProjection.rowCount !== 78 ||
+    controlFlowReading.tarotProjection.fixedDeck !== "Tarot deck" ||
+    controlFlowReading.tarotProjection.hasDeckSwitch ||
+    controlFlowReading.tarotProjection.hasPairedTitle ||
+    controlFlowReading.tarotProjection.hasCombinedOnlyRow ||
+    !controlFlowReading.tarotProjection.nativeMatches.includes("The Magician") ||
+    controlFlowReading.tarotProjection.crossDeckMatches.length !== 0 ||
+    controlFlowReading.tarotProjection.card79Matches.length !== 0 ||
+    controlFlowReading.oracleProjection.resultCount !== 78 ||
+    controlFlowReading.oracleProjection.rowCount !== 78 ||
+    controlFlowReading.oracleProjection.fixedDeck !== "Oracle deck" ||
+    controlFlowReading.oracleProjection.hasDeckSwitch ||
+    controlFlowReading.oracleProjection.hasPairedTitle ||
+    controlFlowReading.oracleProjection.hasCombinedOnlyRow ||
+    !controlFlowReading.oracleProjection.nativeMatches.includes("The Crow") ||
+    controlFlowReading.oracleProjection.crossDeckMatches.length !== 0 ||
+    controlFlowReading.oracleProjection.card79Matches.length !== 0 ||
+    controlFlowReading.dualAspectLens.selected !== "Mixed faces" ||
+    controlFlowReading.dualAspectLens.choiceCount !== 1 ||
+    controlFlowReading.dualAspectLens.mirraPresent ||
     !controlFlowReading.missingRecovery.pickerOpen ||
     !controlFlowReading.missingRecovery.searchFocused ||
     controlFlowReading.missingRecovery.position !== "0" ||
@@ -1162,15 +1352,28 @@ try {
     controlFlowReading.selectedSemantics.pressed !== "true" ||
     !controlFlowReading.selectedSemantics.text.includes("Selected") ||
     controlFlowReading.selectedSemantics.hasPlus ||
+    controlFlowReading.revealGate.meaningInitiallyPresent ||
+    !controlFlowReading.revealGate.buttonDisabledInitially ||
+    controlFlowReading.revealGate.expandedInitially !== "false" ||
+    !controlFlowReading.revealGate.whitespaceStillDisabled ||
+    !controlFlowReading.revealGate.buttonEnabledAfterText ||
+    controlFlowReading.revealGate.meaningBeforeReveal ||
+    controlFlowReading.revealGate.expandedAfterReveal !== "true" ||
+    controlFlowReading.mirraArtworkToggle.before.face !== "tarot" ||
+    controlFlowReading.mirraArtworkToggle.before.title !== "Three of Wands" ||
+    controlFlowReading.mirraArtworkToggle.before.pickerOpen ||
+    controlFlowReading.mirraArtworkToggle.after.face !== "oracle" ||
+    controlFlowReading.mirraArtworkToggle.after.title !== "Three of Embers" ||
+    controlFlowReading.mirraArtworkToggle.after.pickerOpen ||
     new Set([
-      controlFlowReading.interpretation.uprightCombinedMeaning,
-      controlFlowReading.interpretation.reversedCombinedMeaning,
+      controlFlowReading.interpretation.uprightTarotMeaning,
       controlFlowReading.interpretation.reversedTarotMeaning,
+      controlFlowReading.interpretation.uprightOracleMeaning,
       controlFlowReading.interpretation.reversedOracleMeaning,
     ]).size !== 4 ||
-    controlFlowReading.interpretation.uprightCombinedMeaning.length < 70 ||
-    controlFlowReading.interpretation.reversedCombinedMeaning.length < 70 ||
+    controlFlowReading.interpretation.uprightTarotMeaning.length < 70 ||
     controlFlowReading.interpretation.reversedTarotMeaning.length < 70 ||
+    controlFlowReading.interpretation.uprightOracleMeaning.length < 70 ||
     controlFlowReading.interpretation.reversedOracleMeaning.length < 70 ||
     controlFlowReading.interpretation.dutchOracleMeaning.length < 70 ||
     !controlFlowReading.interpretation.oracleMode.includes("Oracle") ||
@@ -1180,21 +1383,28 @@ try {
     !controlFlowReading.interpretation.dutchDisclaimer.includes("niet de officiële gids") ||
     !controlFlowReading.interpretation.reflection.endsWith("?") ||
     controlFlowReading.interpretation.keywordCount !== 3 ||
-    !controlFlowReading.combinedOnly.cardName.includes("Garden Chimes") ||
-    controlFlowReading.combinedOnly.combinedPressed !== "true" ||
-    !controlFlowReading.combinedOnly.tarotDisabled ||
-    !controlFlowReading.combinedOnly.oracleDisabled ||
+    controlFlowReading.combinedOnly.cardName !== "Garden Chimes and Water Song" ||
+    controlFlowReading.combinedOnly.artworkFace !== null ||
+    controlFlowReading.combinedOnly.artworkSwitchable ||
+    controlFlowReading.combinedOnly.faceControlCount !== 0 ||
+    !controlFlowReading.combinedOnly.note.includes("combined interpretation only") ||
+    !controlFlowReading.combinedOnly.revealInitiallyDisabled ||
+    controlFlowReading.combinedOnly.meaningInitiallyPresent ||
+    !controlFlowReading.combinedOnly.artworkOpenedPicker ||
     controlFlowReading.combinedOnly.meaning.length < 70 ||
     !controlFlowReading.combinedOnly.mode.includes("Combined") ||
     controlFlowReading.removed.progress !== "0/1" ||
     controlFlowReading.removed.empty !== "Empty position" ||
     controlFlowReading.removed.controlsPresent ||
     controlFlowReading.resetDefaults.upright !== "true" ||
-    controlFlowReading.resetDefaults.combined !== "true" ||
+    controlFlowReading.resetDefaults.tarot !== "true" ||
     controlFlowReading.resetDefaults.primary !== "true" ||
     controlFlowReading.resetDefaults.firstSeen ||
     controlFlowReading.resetDefaults.impression !== "" ||
     controlFlowReading.resetDefaults.interpretation !== "" ||
+    controlFlowReading.revealBeforeCompletion.readerText !== "Reader interpretation survives reload" ||
+    !controlFlowReading.revealBeforeCompletion.meaningPresent ||
+    controlFlowReading.revealBeforeCompletion.expanded !== "true" ||
     !controlFlowReading.reopened.completeAction ||
     controlFlowReading.reopened.reopenAction ||
     controlFlowReading.laterReflection !== "Later reflection survives reload"
@@ -1235,11 +1445,19 @@ try {
       .find((candidate) => text(candidate).includes("Control flow persistence check"))
       ?.click();
     await waitFor(() => document.querySelector("#later-reflection"), "persisted later reflection");
+    const revealButton = button("Reveal companion interpretation");
+    const interpretationAfterReload = {
+      readerText: document.querySelector("#card-interpretation")?.value,
+      meaningPresent: Boolean(document.querySelector(".interpretation-meaning")),
+      revealDisabled: Boolean(revealButton?.disabled),
+      expanded: revealButton?.getAttribute("aria-expanded"),
+    };
     const laterReflection = document.querySelector("#later-reflection")?.value;
     document.querySelector('.reading-topbar button[aria-label="Back"]')?.click();
     await waitFor(() => document.querySelector("h1")?.textContent?.trim() === "Journal", "Journal-origin Back");
     return {
       laterReflection,
+      interpretationAfterReload,
       backHeading: document.querySelector("h1")?.textContent?.trim(),
       scrollY: window.scrollY,
       focus: document.activeElement?.tagName,
@@ -1248,6 +1466,10 @@ try {
 
   if (
     controlFlowReload.laterReflection !== "Later reflection survives reload" ||
+    controlFlowReload.interpretationAfterReload.readerText !== "Reader interpretation survives reload" ||
+    controlFlowReload.interpretationAfterReload.meaningPresent ||
+    controlFlowReload.interpretationAfterReload.revealDisabled ||
+    controlFlowReload.interpretationAfterReload.expanded !== "false" ||
     controlFlowReload.backHeading !== "Journal" ||
     controlFlowReload.scrollY !== 0 ||
     controlFlowReload.focus !== "MAIN"

@@ -34,6 +34,9 @@ await Promise.all([
 const storage = await import(new URL(`file:///${join(temporaryDirectory, "storage.mjs").replaceAll("\\", "/")}`));
 const { CARDS } = await import(new URL(`file:///${join(temporaryDirectory, "cards.mjs").replaceAll("\\", "/")}`));
 const regularCardId = CARDS.find((card) => !card.combinedOnly).id;
+const secondRegularCardId = CARDS.find(
+  (card) => !card.combinedOnly && card.id !== regularCardId,
+).id;
 const combinedOnlyCardId = CARDS.find((card) => card.combinedOnly).id;
 
 after(async () => {
@@ -136,6 +139,29 @@ test("accepts legacy states without optional entry drafts and creates explicit s
     lens: "combined",
     question: "",
   });
+});
+
+test("accepts legacy interpretation text and validates optional card provenance", () => {
+  const legacyPayload = makePayload();
+  legacyPayload.state.readings[0].pulls[0].interpretation = "A legacy interpretation";
+  const legacy = parsePayload(legacyPayload);
+  assert.equal("interpretationCardId" in legacy.state.readings[0].pulls[0], false);
+
+  for (const interpretationCardId of [null, regularCardId, secondRegularCardId]) {
+    const payload = makePayload();
+    Object.assign(payload.state.readings[0].pulls[0], {
+      interpretation: "Preserved reader text",
+      interpretationCardId,
+    });
+    const parsed = parsePayload(payload);
+    assert.equal(parsed.state.readings[0].pulls[0].interpretationCardId, interpretationCardId);
+  }
+
+  for (const interpretationCardId of [42, "missing-card-id"]) {
+    const payload = makePayload();
+    payload.state.readings[0].pulls[0].interpretationCardId = interpretationCardId;
+    assert.throws(() => parsePayload(payload), /not a valid Ritual Atlas backup/);
+  }
 });
 
 test("rejects malformed setup and later-reflection drafts", () => {

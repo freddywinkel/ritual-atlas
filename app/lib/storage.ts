@@ -174,6 +174,11 @@ function isReading(value: unknown, allowIncompleteComplete = false): boolean {
         pull.firstSeenAspect === "unclear") &&
       typeof pull.firstImpression === "string" &&
       typeof pull.interpretation === "string" &&
+      (!("interpretationCardId" in pull) ||
+        pull.interpretationCardId === undefined ||
+        pull.interpretationCardId === null ||
+        (typeof pull.interpretationCardId === "string" &&
+          VALID_CARD_IDS.has(pull.interpretationCardId))) &&
       (!("freeformPosition" in pull) ||
         pull.freeformPosition === undefined ||
         isFreeformPosition(pull.freeformPosition)) &&

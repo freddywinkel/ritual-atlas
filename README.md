@@ -12,14 +12,18 @@ guidebook.
 
 ## What is included
 
-- a complete searchable 79-card catalog
+- separate searchable 78-card Tarot and Oracle deck views, plus the unique
+  combined 79th card in Mirra and mixed-face readings
 - 79 original, card-specific figurative illustrations optimized for the app
 - original bilingual interpretations for all 79 cards, with Combined, Tarot,
   and Oracle perspectives, upright/reversed meanings, keywords, and reflection
   prompts
 - six reading layouts, including a freeform session
-- combined, Tarot, Oracle, and mixed reading lenses
+- Mirra readings with a tap-to-switch Tarot/Oracle face, dedicated Tarot and
+  Oracle decks, and a spread-specific mixed mode
 - upright/reversed orientation, first-seen aspect, notes, reflections, and tags
+- a reader-first interpretation flow that keeps the companion interpretation hidden
+  until a personal interpretation has been written and deliberately revealed
 - drafts, a searchable journal, and personal pattern insights
 - IndexedDB storage that stays in this browser profile
 - revision-safe multi-tab storage with an explicit conflict warning

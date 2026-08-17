@@ -11,7 +11,12 @@ import {
 } from "react";
 import {
   CARDS,
+  getCardDeckName,
+  getCardDeckPrintedName,
+  getCardDeckSearchTerms,
   getCardDisplayName,
+  getCardsForReadingLens,
+  type CardDeck,
   type CardDefinition,
 } from "../data/cards";
 import {
@@ -34,6 +39,7 @@ import {
 } from "../lib/storage";
 import {
   createReading,
+  getEffectivePullLens,
   isReadingComplete,
   makeId,
   readingProgress,
@@ -159,6 +165,16 @@ function newestDraftId(readings: readonly Reading[], excludingId?: string): stri
   );
 }
 
+function getPullDeck(reading: Reading, pull: Pull): CardDeck {
+  if (pull.lensOverride === "oracle") return "oracle";
+  if (pull.lensOverride === "tarot") return "tarot";
+  return reading.readingLens === "oracle" ? "oracle" : "tarot";
+}
+
+function getInterpretationRevealKey(reading: Reading, pull: Pull): string {
+  return `${reading.id}:${pull.slotId}:${pull.cardId ?? "empty"}`;
+}
+
 export default function TarotApp() {
   const [appState, setAppState] = useState<AppState>(() => createInitialState());
   const [loaded, setLoaded] = useState(false);
@@ -172,12 +188,16 @@ export default function TarotApp() {
   const [navigationRevision, setNavigationRevision] = useState(0);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerDeck, setPickerDeck] = useState<CardDeck>("tarot");
   const [cardFilter, setCardFilter] = useState<CardFilter>("all");
   const [journalSearch, setJournalSearch] = useState("");
   const [journalFilter, setJournalFilter] = useState<JournalFilter>("all");
   const [setupOptionsOpen, setSetupOptionsOpen] = useState(false);
   const [tagDrafts, setTagDrafts] = useState<Record<string, string>>({});
   const [cardAnnouncement, setCardAnnouncement] = useState("");
+  const [revealedInterpretationKeys, setRevealedInterpretationKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [readingReturnScreen, setReadingReturnScreen] = useState<"home" | "journal">("home");
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [confirmation, setConfirmation] = useState<ConfirmationState | null>(null);
@@ -197,6 +217,7 @@ export default function TarotApp() {
   const pickerSearchInputRef = useRef<HTMLInputElement>(null);
   const pickerReturnFocusRef = useRef<HTMLElement | null>(null);
   const confirmationDialogRef = useRef<HTMLElement>(null);
+  const interpretationPanelRef = useRef<HTMLElement>(null);
   const confirmationReturnFocusRef = useRef<HTMLElement | null>(null);
   const latestStateRef = useRef(appState);
   const storageRevisionRef = useRef(0);
@@ -222,7 +243,11 @@ export default function TarotApp() {
       ? setupDraft.spreadId
       : "one-card"
   ) as SpreadTemplate["id"];
-  const setupLens = setupDraft.lens;
+  const setupLens: ReadingLens = setupSpreadId === "dual-aspect"
+    ? "mixed"
+    : setupDraft.lens === "mixed"
+      ? "combined"
+      : setupDraft.lens;
   const setupQuestion = setupDraft.question;
 
   const persistState = useCallback((state: AppState): Promise<void> => {
@@ -569,6 +594,7 @@ export default function TarotApp() {
       setAppState(stored);
       setActiveReadingId(stored.activeDraftId);
       setActivePullIndex(0);
+      setRevealedInterpretationKeys(new Set());
       resetPickerState();
       setSaveStatus("idle");
     } catch {
@@ -628,6 +654,7 @@ export default function TarotApp() {
   function openCardPicker() {
     setCardAnnouncement("");
     resetPickerState();
+    if (activeReading && activePull) setPickerDeck(getPullDeck(activeReading, activePull));
     setPickerOpen(true);
   }
 
@@ -684,16 +711,36 @@ export default function TarotApp() {
   }
 
   function applyCardSelection(card: CardDefinition) {
+    if (!activeReading || !activePull) return;
+    const nextLensOverride = card.combinedOnly
+      ? "combined"
+      : activeReading.readingLens === "combined"
+        ? pickerDeck
+        : activeReading.readingLens === "mixed"
+          ? activePull.lensOverride ?? activePosition?.defaultLens ?? pickerDeck
+          : null;
     updateActivePull({
       cardId: card.id,
-      lensOverride: card.combinedOnly ? "combined" : activePull?.lensOverride ?? null,
-      firstSeenAspect: card.combinedOnly ? null : activePull?.firstSeenAspect ?? null,
+      lensOverride: nextLensOverride,
+      firstSeenAspect: card.combinedOnly ? null : activePull.firstSeenAspect,
+      interpretationCardId: activePull.cardId === card.id
+        ? activePull.interpretationCardId
+        : activePull.interpretation.trim()
+          ? activePull.interpretationCardId ?? activePull.cardId
+          : card.id,
+    });
+    setRevealedInterpretationKeys((current) => {
+      const next = new Set(current);
+      next.delete(getInterpretationRevealKey(activeReading, activePull));
+      return next;
     });
     setPickerOpen(false);
     resetPickerState();
     setCardAnnouncement(
       t("cardPicker.selectedAnnouncement", {
-        card: getCardDisplayName(card, language),
+        card: card.combinedOnly
+          ? getCardDisplayName(card, language)
+          : getCardDeckName(card, language, pickerDeck),
       }),
     );
   }
@@ -746,6 +793,7 @@ export default function TarotApp() {
 
   function clearActiveCard() {
     if (!activeReading || !activePull) return;
+    const revealKey = getInterpretationRevealKey(activeReading, activePull);
     updateActivePull({
       cardId: null,
       orientation: "upright",
@@ -754,9 +802,58 @@ export default function TarotApp() {
       firstSeenAspect: null,
       firstImpression: "",
       interpretation: "",
+      interpretationCardId: null,
+    });
+    setRevealedInterpretationKeys((current) => {
+      const next = new Set(current);
+      next.delete(revealKey);
+      return next;
     });
     setConfirmation(null);
     setCardAnnouncement("");
+  }
+
+  function toggleMirraDeck() {
+    if (
+      !activeReading ||
+      !activePull ||
+      !activeCard ||
+      activeReading.readingLens !== "combined" ||
+      activeCard.combinedOnly
+    ) {
+      return;
+    }
+    const nextDeck: CardDeck = activePull.lensOverride === "tarot"
+      ? "oracle"
+      : activePull.lensOverride === "oracle"
+        ? "tarot"
+        : "tarot";
+    updateActivePull({ lensOverride: nextDeck });
+    setCardAnnouncement(
+      t("reading.cardFaceChanged", {
+        deck: t(nextDeck === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort"),
+        card: getCardDeckName(activeCard, language, nextDeck),
+      }),
+    );
+  }
+
+  function setInterpretationRevealed(revealKey: string, revealed: boolean) {
+    setRevealedInterpretationKeys((current) => {
+      const next = new Set(current);
+      if (revealed) next.add(revealKey);
+      else next.delete(revealKey);
+      return next;
+    });
+    setCardAnnouncement(t(revealed ? "interpretation.revealed" : "interpretation.hidden"));
+    if (revealed) {
+      window.requestAnimationFrame(() => {
+        interpretationPanelRef.current?.focus({ preventScroll: true });
+        interpretationPanelRef.current?.scrollIntoView({
+          behavior: appState.settings.reducedMotion ? "auto" : "smooth",
+          block: "start",
+        });
+      });
+    }
   }
 
   function deleteActiveReading() {
@@ -815,6 +912,7 @@ export default function TarotApp() {
           firstSeenAspect: null,
           firstImpression: "",
           interpretation: "",
+          interpretationCardId: null,
         },
       ],
     }));
@@ -923,6 +1021,7 @@ export default function TarotApp() {
       setActiveReadingId(backup.state.activeDraftId);
       setActivePullIndex(0);
       setTagDrafts({});
+      setRevealedInterpretationKeys(new Set());
       resetPickerState();
       setJournalSearch("");
       setJournalFilter("all");
@@ -979,6 +1078,7 @@ export default function TarotApp() {
       resetPickerState();
       setSetupOptionsOpen(false);
       setCardAnnouncement("");
+      setRevealedInterpretationKeys(new Set());
       setConfirmation(null);
       setResetPhrase("");
       setNotice(UI_COPY[initial.settings.language]["privacy.dataCleared"]);
@@ -1005,22 +1105,21 @@ export default function TarotApp() {
   const usedCardIds = new Set(activeReading?.pulls.map((pull) => pull.cardId).filter(Boolean));
   const filteredCards = useMemo(() => {
     const queryTokens = normalizeSearch(pickerSearch, language).split(" ").filter(Boolean);
-    return CARDS.filter((card) => {
-      if (cardFilter !== "all" && card.arcana !== cardFilter) return false;
+    const readingCards = getCardsForReadingLens(activeReading?.readingLens ?? "combined");
+    return readingCards.filter((card) => {
+      if (pickerDeck === "tarot" && cardFilter !== "all" && card.arcana !== cardFilter) {
+        return false;
+      }
       if (!queryTokens.length) return true;
       const displayedNumber = card.order + 1;
       const haystack = normalizeSearch([
         String(displayedNumber),
         String(displayedNumber).padStart(2, "0"),
-        card.prismaTitleEn,
-        card.prismaTitleNl ?? "",
-        card.cosmaTitleEn,
-        card.cosmaAliasNl ?? "",
-        ...card.searchAliases,
+        ...getCardDeckSearchTerms(card, pickerDeck),
       ].join(" "), language);
       return queryTokens.every((token) => haystack.includes(token));
     });
-  }, [cardFilter, language, pickerSearch]);
+  }, [activeReading?.readingLens, cardFilter, language, pickerDeck, pickerSearch]);
 
   const filteredReadings = useMemo(() => {
     const query = journalSearch.trim().toLocaleLowerCase(language === "nl" ? "nl" : "en");
@@ -1369,7 +1468,11 @@ export default function TarotApp() {
                 onClick={() => {
                   updateSetupDraft({
                     spreadId: spread.id,
-                    ...(spread.id === "dual-aspect" ? { lens: "mixed" } : {}),
+                    lens: spread.id === "dual-aspect"
+                      ? "mixed"
+                      : setupLens === "mixed"
+                        ? "combined"
+                        : setupLens,
                   });
                 }}
               >
@@ -1387,13 +1490,14 @@ export default function TarotApp() {
         <section className="form-section setup-choices">
           <div className="section-heading"><div><p className="step-number">02</p><h2>{t("newReading.chooseLens")}</h2></div></div>
           <div className="lens-grid" role="group" aria-label={t("newReading.chooseLens")}>
-            {LENSES.map((lens) => (
+            {LENSES.filter((lens) => (
+              setupSpreadId === "dual-aspect" ? lens.id === "mixed" : lens.id !== "mixed"
+            )).map((lens) => (
               <button
                 className={`lens-choice${setupLens === lens.id ? " is-selected" : ""}`}
                 type="button"
                 key={lens.id}
                 aria-pressed={setupLens === lens.id}
-                disabled={setupSpreadId === "dual-aspect" && lens.id !== "mixed"}
                 onClick={() => updateSetupDraft({ lens: lens.id })}
               >
                 <strong>{t(lens.name)}</strong>
@@ -1435,10 +1539,33 @@ export default function TarotApp() {
       );
     }
     const progress = readingProgress(activeReading);
-    const cardName = activeCard ? getCardDisplayName(activeCard, language) : t("reading.emptyPosition");
-    const effectiveLens: Exclude<ReadingLens, "mixed"> = activeCard?.combinedOnly
-      ? "combined"
-      : activePull.lensOverride ?? (activeReading.readingLens === "mixed" ? "combined" : activeReading.readingLens);
+    const effectiveLens = getEffectivePullLens(
+      activeReading,
+      activePull,
+      activePosition.defaultLens,
+      activeCard?.combinedOnly,
+    );
+    const activeDeck: CardDeck = effectiveLens === "oracle" ? "oracle" : "tarot";
+    const cardName = activeCard
+      ? effectiveLens === "combined"
+        ? getCardDisplayName(activeCard, language)
+        : getCardDeckName(activeCard, language, activeDeck)
+      : t("reading.emptyPosition");
+    const mirraCanToggle = Boolean(
+      activeCard && activeReading.readingLens === "combined" && !activeCard.combinedOnly,
+    );
+    const nextMirraDeck: CardDeck = effectiveLens === "combined"
+      ? "tarot"
+      : activeDeck === "tarot"
+        ? "oracle"
+        : "tarot";
+    const revealKey = getInterpretationRevealKey(activeReading, activePull);
+    const hasInterpretationText = activePull.interpretation.trim().length > 0;
+    const interpretationReviewedForCard = activePull.interpretationCardId === undefined ||
+      activePull.interpretationCardId === activeCard?.id;
+    const hasUnreviewedInterpretation = hasInterpretationText && !interpretationReviewedForCard;
+    const hasReaderInterpretation = hasInterpretationText && interpretationReviewedForCard;
+    const isInterpretationRevealed = hasReaderInterpretation && revealedInterpretationKeys.has(revealKey);
     const missingCards = activeReading.pulls.filter((pull) => !pull.cardId).length;
     const cardInterpretation = activeCard
       ? getCardInterpretation(activeCard.id)
@@ -1525,12 +1652,19 @@ export default function TarotApp() {
 
         <section className="card-focus">
           <button
-            className="artwork-button"
+            className={`artwork-button${mirraCanToggle ? " artwork-button--switchable" : ""}`}
             type="button"
-            onClick={openCardPicker}
+            data-card-face={activeCard && !activeCard.combinedOnly ? effectiveLens : undefined}
+            onClick={mirraCanToggle ? toggleMirraDeck : openCardPicker}
             aria-label={
               activeCard
-                ? `${t("reading.changeCard")}: ${cardName}`
+                ? mirraCanToggle
+                  ? t("reading.switchCardFace", {
+                      current: interpretationLensLabel,
+                      next: t(nextMirraDeck === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort"),
+                      card: cardName,
+                    })
+                  : `${t("reading.changeCard")}: ${cardName}`
                 : t("reading.addCard")
             }
           >
@@ -1538,26 +1672,50 @@ export default function TarotApp() {
               card={activeCard}
               reversed={activePull.orientation === "reversed"}
               alt={cardName}
+              label={cardName}
             />
             {!activeCard && <span className="artwork-empty-callout">＋ {t("reading.addCard")}</span>}
+            {mirraCanToggle && (
+              <span className="card-face-switch" aria-hidden="true">
+                <strong>{interpretationLensLabel}</strong>
+                <small>{t("reading.tapToSwitchFace", {
+                  deck: t(nextMirraDeck === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort"),
+                })}</small>
+              </span>
+            )}
           </button>
           <div className="card-title-block">
             <p className="eyebrow">{activeCard ? t("reading.cardDetails") : t("reading.tapPosition")}</p>
             <h2>{cardName}</h2>
             {language === "nl" && activeCard && appState.settings.showEnglishCardNamesInDutch && (
-              <p className="printed-title">{activeCard.prismaTitleEn} / {activeCard.cosmaTitleEn}</p>
+              <p className="printed-title">
+                {effectiveLens === "combined"
+                  ? getCardDisplayName(activeCard, "en")
+                  : getCardDeckPrintedName(activeCard, activeDeck)}
+              </p>
             )}
             {activeCard && (
               <button
                 className="interpretation-jump"
                 type="button"
-                aria-controls="card-interpretation-panel"
-                onClick={() => document.getElementById("card-interpretation-panel")?.scrollIntoView({
-                  behavior: appState.settings.reducedMotion ? "auto" : "smooth",
-                  block: "start",
-                })}
+                aria-controls={isInterpretationRevealed ? "card-interpretation-panel" : "reader-interpretation-panel"}
+                onClick={() => {
+                  document.getElementById(
+                    isInterpretationRevealed ? "card-interpretation-panel" : "reader-interpretation-panel",
+                  )?.scrollIntoView({
+                    behavior: appState.settings.reducedMotion ? "auto" : "smooth",
+                    block: "start",
+                  });
+                  window.requestAnimationFrame(() => {
+                    if (isInterpretationRevealed) {
+                      interpretationPanelRef.current?.focus({ preventScroll: true });
+                    } else {
+                      document.getElementById("card-interpretation")?.focus({ preventScroll: true });
+                    }
+                  });
+                }}
               >
-                {t("interpretation.jump")} <span aria-hidden="true">↓</span>
+                {t(isInterpretationRevealed ? "interpretation.jump" : "interpretation.writeFirst")} <span aria-hidden="true">↓</span>
               </button>
             )}
           </div>
@@ -1565,7 +1723,14 @@ export default function TarotApp() {
 
         {activeCard && (
           <>
-            <section className="quick-card-controls" aria-label={t("reading.cardDetails")}>
+            <section
+              className={`quick-card-controls${
+                !mirraCanToggle && activeReading.readingLens !== "mixed"
+                  ? " quick-card-controls--single"
+                  : ""
+              }`}
+              aria-label={t("reading.cardDetails")}
+            >
               <ControlGroup label={t("orientation.label")}>
                 {(["upright", "reversed"] as Orientation[]).map((orientation) => (
                   <button
@@ -1579,7 +1744,20 @@ export default function TarotApp() {
                   </button>
                 ))}
               </ControlGroup>
-              <ControlGroup label={t("lenses.label")}>
+              {mirraCanToggle && <ControlGroup label={t("reading.cardFace")}>
+                {(["tarot", "oracle"] as CardDeck[]).map((deck) => (
+                  <button
+                    key={deck}
+                    type="button"
+                    aria-controls="card-interpretation-panel"
+                    aria-pressed={effectiveLens === deck}
+                    onClick={() => updateActivePull({ lensOverride: deck })}
+                  >
+                    {t(deck === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort")}
+                  </button>
+                ))}
+              </ControlGroup>}
+              {activeReading.readingLens === "mixed" && !activeCard.combinedOnly && <ControlGroup label={t("lenses.label")}>
                 {(["combined", "tarot", "oracle"] as const).map((lens) => (
                   <button
                     key={lens}
@@ -1592,43 +1770,109 @@ export default function TarotApp() {
                     {t(lens === "combined" ? "lenses.combinedShort" : lens === "tarot" ? "lenses.tarotShort" : "lenses.oracleShort")}
                   </button>
                 ))}
-              </ControlGroup>
+              </ControlGroup>}
             </section>
             {activeCard.combinedOnly && <p className="field-note">{t("lenses.combinedOnly")}</p>}
           </>
         )}
 
-        {activeCard && interpretationPerspective && interpretationMeaning && (
+        {activeCard && (
           <section
-            id="card-interpretation-panel"
-            className="interpretation-panel"
-            aria-labelledby="card-interpretation-title"
+            id="reader-interpretation-panel"
+            className="reader-interpretation-panel"
+            aria-labelledby="reader-interpretation-title"
           >
             <header>
               <div>
-                <p className="eyebrow">{t("interpretation.original")}</p>
-                <h3 id="card-interpretation-title">{t("interpretation.title")}</h3>
+                <p className="eyebrow">{t("interpretation.yoursFirst")}</p>
+                <h3 id="reader-interpretation-title">{t("reading.interpretationLabel")}</h3>
               </div>
-              <span className="interpretation-mode">
-                {interpretationLensLabel}
-                <i aria-hidden="true" />
-                {t(activePull.orientation === "upright" ? "orientation.upright" : "orientation.reversed")}
-              </span>
+              <span className="interpretation-step" aria-hidden="true">1</span>
             </header>
-            <ul className="interpretation-keywords" aria-label={t("interpretation.title")}>
-              {interpretationPerspective.keywords[language].map((keyword) => (
-                <li key={keyword}>{keyword}</li>
-              ))}
-            </ul>
-            <p className="interpretation-meaning">{interpretationMeaning}</p>
-            <div className="interpretation-reflection">
-              <small>{t("interpretation.reflect")}</small>
-              <p>{interpretationPerspective.reflection[language]}</p>
+            <p>{t("interpretation.yoursFirstBody")}</p>
+            <label className="visually-hidden" htmlFor="card-interpretation">
+              {t("reading.interpretationLabel")}
+            </label>
+            <textarea
+              id="card-interpretation"
+              className="text-field"
+              rows={4}
+              value={activePull.interpretation}
+              placeholder={t("reading.interpretationPlaceholder")}
+              onChange={(event) => {
+                const interpretation = event.target.value;
+                updateActivePull({
+                  interpretation,
+                  interpretationCardId: activeCard.id,
+                });
+                if (!interpretation.trim()) {
+                  setRevealedInterpretationKeys((current) => {
+                    const next = new Set(current);
+                    next.delete(revealKey);
+                    return next;
+                  });
+                }
+              }}
+            />
+            <div className="interpretation-reveal-row">
+              <small id="interpretation-reveal-help">
+                {t(hasUnreviewedInterpretation
+                  ? "interpretation.reviewForCard"
+                  : hasReaderInterpretation
+                    ? "interpretation.readyToReveal"
+                    : "interpretation.writeFirstHelp")}
+              </small>
+              <button
+                className={isInterpretationRevealed ? "secondary-action" : "primary-action"}
+                type="button"
+                disabled={!hasReaderInterpretation}
+                aria-describedby="interpretation-reveal-help"
+                aria-expanded={isInterpretationRevealed}
+                aria-controls="card-interpretation-panel"
+                onClick={() => setInterpretationRevealed(revealKey, !isInterpretationRevealed)}
+              >
+                {t(isInterpretationRevealed ? "interpretation.hide" : "interpretation.reveal")}
+              </button>
             </div>
-            <p className="interpretation-disclaimer">{t("interpretation.disclaimer")}</p>
           </section>
         )}
-        {activeCard && interpretationPerspective && (
+
+        {activeCard && (
+          <div id="card-interpretation-panel" className="interpretation-region">
+            {isInterpretationRevealed && interpretationPerspective && interpretationMeaning && (
+              <section
+                ref={interpretationPanelRef}
+                className="interpretation-panel"
+                aria-labelledby="card-interpretation-title"
+                tabIndex={-1}
+              >
+                <header>
+                  <div>
+                    <p className="eyebrow">{t("interpretation.original")}</p>
+                    <h3 id="card-interpretation-title">{t("interpretation.title")}</h3>
+                  </div>
+                  <span className="interpretation-mode">
+                    {interpretationLensLabel}
+                    <i aria-hidden="true" />
+                    {t(activePull.orientation === "upright" ? "orientation.upright" : "orientation.reversed")}
+                  </span>
+                </header>
+                <ul className="interpretation-keywords" aria-label={t("interpretation.title")}>
+                  {interpretationPerspective.keywords[language].map((keyword) => (
+                    <li key={keyword}>{keyword}</li>
+                  ))}
+                </ul>
+                <p className="interpretation-meaning">{interpretationMeaning}</p>
+                <div className="interpretation-reflection">
+                  <small>{t("interpretation.reflect")}</small>
+                  <p>{interpretationPerspective.reflection[language]}</p>
+                </div>
+                <p className="interpretation-disclaimer">{t("interpretation.disclaimer")}</p>
+              </section>
+            )}
+          </div>
+        )}
+        {activeCard && isInterpretationRevealed && interpretationPerspective && (
           <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
             {t("interpretation.updated", {
               lens: interpretationLensLabel,
@@ -1714,15 +1958,6 @@ export default function TarotApp() {
               value={activePull.firstImpression}
               placeholder={t("reading.notesPlaceholder")}
               onChange={(event) => updateActivePull({ firstImpression: event.target.value })}
-            />
-            <label className="field-label" htmlFor="card-interpretation">{t("reading.interpretationLabel")}</label>
-            <textarea
-              id="card-interpretation"
-              className="text-field"
-              rows={4}
-              value={activePull.interpretation}
-              placeholder={t("reading.interpretationPlaceholder")}
-              onChange={(event) => updateActivePull({ interpretation: event.target.value })}
             />
           </section>
         )}
@@ -1913,7 +2148,7 @@ export default function TarotApp() {
                 <p className="eyebrow">{t("insights.lensBalance")}</p>
                 <div className="lens-stats">
                   {LENSES.filter((lens) => lens.id !== "mixed").map((lens) => (
-                    <div key={lens.id}><span>{t(lens.name)}</span><strong>{insights.lensCounts.get(lens.id as Exclude<ReadingLens, "mixed">) ?? 0}</strong></div>
+                    <div key={lens.id}><span>{t(lens.id === "combined" ? "insights.combined" : lens.name)}</span><strong>{insights.lensCounts.get(lens.id as Exclude<ReadingLens, "mixed">) ?? 0}</strong></div>
                   ))}
                 </div>
               </section>
@@ -2177,15 +2412,42 @@ export default function TarotApp() {
               }}>×</button>
             )}
           </div>
-          <div className="filter-row" role="group" aria-label={t("cardPicker.filterLabel")}>
-            {(["all", "major", "minor"] as CardFilter[]).map((filter) => (
-              <button key={filter} type="button" aria-pressed={cardFilter === filter} onClick={() => setCardFilter(filter)}>
-                {t(filter === "all" ? "cardPicker.filterAll" : filter === "major" ? "cardPicker.filterMajor" : "cardPicker.filterMinor")}
-              </button>
-            ))}
+          <div className="picker-controls-row">
+            {activeReading && (activeReading.readingLens === "combined" || activeReading.readingLens === "mixed") ? (
+              <div className="deck-switch" role="group" aria-label={t("cardPicker.deckLabel")}>
+                {(["tarot", "oracle"] as CardDeck[]).map((deck) => (
+                  <button
+                    key={deck}
+                    type="button"
+                    aria-pressed={pickerDeck === deck}
+                    onClick={() => {
+                      setPickerDeck(deck);
+                      setCardFilter("all");
+                    }}
+                  >
+                    {t(deck === "tarot" ? "cardPicker.tarotDeck" : "cardPicker.oracleDeck")}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="picker-deck-label">
+                {t(pickerDeck === "tarot" ? "cardPicker.tarotDeck" : "cardPicker.oracleDeck")}
+              </span>
+            )}
+            {pickerDeck === "tarot" && (
+              <div className="filter-row" role="group" aria-label={t("cardPicker.filterLabel")}>
+                {(["all", "major", "minor"] as CardFilter[]).map((filter) => (
+                  <button key={filter} type="button" aria-pressed={cardFilter === filter} onClick={() => setCardFilter(filter)}>
+                    {t(filter === "all" ? "cardPicker.filterAll" : filter === "major" ? "cardPicker.filterMajor" : "cardPicker.filterMinor")}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="picker-meta">
-            <p className="picker-hint">{t("cardPicker.searchHint")}</p>
+            <p className="picker-hint">{t("cardPicker.searchHintDeck", {
+              deck: t(pickerDeck === "tarot" ? "cardPicker.tarotDeck" : "cardPicker.oracleDeck"),
+            })}</p>
             <p className="picker-result-count" role="status" aria-live="polite" aria-atomic="true">
               {t(
                 filteredCards.length === 1
@@ -2203,8 +2465,10 @@ export default function TarotApp() {
                 <button key={card.id} type="button" className={selected ? "is-selected" : ""} aria-pressed={selected} onClick={() => selectCard(card)}>
                   <span className="card-result-number">{String(card.order + 1).padStart(2, "0")}</span>
                   <span className="card-result-titles">
-                    <strong>{getCardDisplayName(card, language)}</strong>
-                    {language === "nl" && appState.settings.showEnglishCardNamesInDutch && <small>{card.prismaTitleEn} / {card.cosmaTitleEn}</small>}
+                    <strong>{getCardDeckName(card, language, pickerDeck)}</strong>
+                    {language === "nl" && appState.settings.showEnglishCardNamesInDutch && (
+                      <small>{getCardDeckPrintedName(card, pickerDeck)}</small>
+                    )}
                   </span>
                   {selected ? (
                     <span className="selected-card-state"><span aria-hidden="true">✓</span>{t("cardPicker.selected")}</span>

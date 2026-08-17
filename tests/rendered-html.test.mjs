@@ -569,6 +569,54 @@ test("guards audited persistence, journal, spread, and security behavior", async
   assert.match(layout, /name="referrer" content="no-referrer"/);
 });
 
+test("wires split deck projections and reader-first interpretation reveal into the UI", async () => {
+  const [component, cards, copy, styles] = await Promise.all([
+    readFile(new URL("../app/components/TarotApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/data/cards.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/data/i18n.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  for (const helper of [
+    "getCardsForReadingLens",
+    "getCardDeckName",
+    "getCardDeckPrintedName",
+    "getCardDeckSearchTerms",
+  ]) {
+    assert.match(cards, new RegExp(`export\\s+function\\s+${helper}\\b`));
+    assert.match(component, new RegExp(`\\b${helper}\\(`));
+  }
+  assert.match(cards, /export\s+type\s+CardDeck\b/);
+  assert.match(component, /useState<CardDeck>\(/);
+
+  const readerPanelIndex = component.indexOf('className="reader-interpretation-panel"');
+  const companionPanelIndex = component.indexOf('className="interpretation-panel"');
+  assert.notEqual(readerPanelIndex, -1, "reader interpretation panel must be rendered");
+  assert.notEqual(companionPanelIndex, -1, "companion interpretation panel must be rendered");
+  assert.ok(
+    readerPanelIndex < companionPanelIndex,
+    "reader input must appear before the gated companion interpretation",
+  );
+
+  const revealFlow = sourceSection(
+    component,
+    'className="reader-interpretation-panel"',
+    'className="interpretation-panel"',
+  );
+  assert.match(revealFlow, /activePull\.interpretation/);
+  assert.match(revealFlow, /interpretation\.reveal/);
+  assert.match(revealFlow, /disabled=/);
+  assert.match(revealFlow, /aria-controls="card-interpretation-panel"/);
+  assert.match(component, /revealedInterpretationKeys\.has\(/);
+  assert.match(component, /setRevealedInterpretationKeys\(/);
+  assert.match(
+    component,
+    /\{[^{}]*\bisInterpretationRevealed\b[^{}]*&&\s*\([\s\S]*?className="interpretation-panel"/,
+  );
+  assert.ok([...copy.matchAll(/"interpretation\.reveal"\s*:/g)].length >= 2);
+  assert.match(styles, /\.reader-interpretation-panel\s*\{/);
+});
+
 test("prepares the complete 79-card library with fresh bounded cache writes", async () => {
   const [serviceWorker, artIndexText] = await Promise.all([
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),

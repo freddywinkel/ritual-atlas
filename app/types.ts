@@ -36,6 +36,8 @@ export interface Pull {
   firstSeenAspect: FirstSeenAspect | null;
   firstImpression: string;
   interpretation: string;
+  /** Card ID the saved interpretation was last reviewed for. Legacy pulls omit it. */
+  interpretationCardId?: string | null;
   freeformPosition?: {
     x: number;
     y: number;

@@ -16,6 +16,7 @@ interface CardArtworkProps {
   reversed?: boolean;
   compact?: boolean;
   alt: string;
+  label?: string;
 }
 
 export function CardArtwork({
@@ -23,6 +24,7 @@ export function CardArtwork({
   reversed = false,
   compact = false,
   alt,
+  label,
 }: CardArtworkProps) {
   const [failedCardId, setFailedCardId] = useState<string | null>(null);
   const hasArtwork = Boolean(card && failedCardId !== card.id);
@@ -54,7 +56,7 @@ export function CardArtwork({
           <span className="card-artwork__star card-artwork__star--one" aria-hidden="true" />
           <span className="card-artwork__star card-artwork__star--two" aria-hidden="true" />
           <span className="card-artwork__label">
-            {card?.prismaTitleEn ?? card?.cosmaTitleEn ?? alt}
+            {label ?? card?.prismaTitleEn ?? card?.cosmaTitleEn ?? alt}
           </span>
         </div>
       )}

@@ -41,11 +41,26 @@ await Promise.all(
 );
 
 const cardsSource = await readFile(new URL("../app/data/cards.ts", import.meta.url), "utf8");
-await writeFile(join(temporaryDirectory, "cards.mjs"), transpile(cardsSource, "cards.ts"));
+const readingSource = await readFile(new URL("../app/lib/reading.ts", import.meta.url), "utf8");
+await Promise.all([
+  writeFile(join(temporaryDirectory, "cards.mjs"), transpile(cardsSource, "cards.ts")),
+  writeFile(join(temporaryDirectory, "reading.mjs"), transpile(readingSource, "reading.ts")),
+]);
 
-const [{ CARD_INTERPRETATIONS }, { CARDS }] = await Promise.all([
+const [
+  { CARD_INTERPRETATIONS },
+  {
+    CARDS,
+    getCardDeckName,
+    getCardDeckPrintedName,
+    getCardDeckSearchTerms,
+    getCardsForReadingLens,
+  },
+  { getEffectivePullLens },
+] = await Promise.all([
   import(new URL(`file:///${join(temporaryDirectory, "index.mjs").replaceAll("\\", "/")}`)),
   import(new URL(`file:///${join(temporaryDirectory, "cards.mjs").replaceAll("\\", "/")}`)),
+  import(new URL(`file:///${join(temporaryDirectory, "reading.mjs").replaceAll("\\", "/")}`)),
 ]);
 
 after(async () => {
@@ -71,6 +86,85 @@ test("covers every catalog card exactly once with the supported lenses", () => {
       assert.ok(entry.oracle, `${card.id} needs an Oracle interpretation`);
     }
   }
+});
+
+test("projects paired cards into stable 78-card Tarot and Oracle decks", () => {
+  assert.match(
+    cardsSource,
+    /export\s+type\s+CardDeck\s*=\s*"tarot"\s*\|\s*"oracle"/,
+    "the two projected deck names must remain a closed TypeScript union",
+  );
+
+  const tarotCards = getCardsForReadingLens("tarot");
+  const oracleCards = getCardsForReadingLens("oracle");
+  const mirraCards = getCardsForReadingLens("combined");
+  const mixedCards = getCardsForReadingLens("mixed");
+  const ids = (cards) => cards.map((card) => card.id);
+
+  assert.equal(tarotCards.length, 78);
+  assert.equal(oracleCards.length, 78);
+  assert.equal(new Set(ids(tarotCards)).size, 78);
+  assert.equal(new Set(ids(oracleCards)).size, 78);
+  assert.deepEqual(
+    ids(tarotCards),
+    ids(oracleCards),
+    "both views must retain the same stable physical-card IDs and order",
+  );
+  assert.ok(tarotCards.every((card) => !card.combinedOnly));
+  assert.ok(oracleCards.every((card) => !card.combinedOnly));
+  assert.deepEqual(ids(mirraCards), ids(CARDS));
+  assert.deepEqual(ids(mixedCards), ids(CARDS));
+
+  for (const card of tarotCards) {
+    assert.equal(getCardDeckName(card, "en", "tarot"), card.prismaTitleEn);
+    assert.equal(
+      getCardDeckName(card, "nl", "tarot"),
+      card.prismaTitleNl ?? card.prismaTitleEn,
+    );
+    assert.equal(getCardDeckName(card, "en", "oracle"), card.cosmaTitleEn);
+    assert.equal(
+      getCardDeckName(card, "nl", "oracle"),
+      card.cosmaAliasNl ?? card.cosmaTitleEn,
+    );
+    assert.equal(getCardDeckPrintedName(card, "tarot"), card.prismaTitleEn);
+    assert.equal(getCardDeckPrintedName(card, "oracle"), card.cosmaTitleEn);
+  }
+
+  const threeOfWands = tarotCards.find((card) => card.id === "wands-three");
+  assert.ok(threeOfWands);
+  assert.ok(getCardDeckSearchTerms(threeOfWands, "tarot").includes("3 of Wands"));
+  assert.ok(!getCardDeckSearchTerms(threeOfWands, "tarot").includes("Three of Embers"));
+  assert.ok(getCardDeckSearchTerms(threeOfWands, "oracle").includes("3 of Embers"));
+  assert.ok(!getCardDeckSearchTerms(threeOfWands, "oracle").includes("Three of Wands"));
+});
+
+test("preserves legacy Combined and mixed-position interpretation lenses", () => {
+  const pull = { lensOverride: null };
+
+  assert.equal(getEffectivePullLens({ readingLens: "combined" }, pull), "combined");
+  assert.equal(
+    getEffectivePullLens({ readingLens: "combined" }, { lensOverride: "tarot" }),
+    "tarot",
+  );
+  assert.equal(
+    getEffectivePullLens({ readingLens: "combined" }, { lensOverride: "oracle" }),
+    "oracle",
+  );
+  assert.equal(getEffectivePullLens({ readingLens: "mixed" }, pull, "combined"), "combined");
+  assert.equal(getEffectivePullLens({ readingLens: "mixed" }, pull, "tarot"), "tarot");
+  assert.equal(
+    getEffectivePullLens({ readingLens: "mixed" }, { lensOverride: "oracle" }, "combined"),
+    "oracle",
+  );
+  assert.equal(
+    getEffectivePullLens({ readingLens: "oracle" }, { lensOverride: "tarot" }),
+    "tarot",
+  );
+  assert.equal(
+    getEffectivePullLens({ readingLens: "tarot" }, { lensOverride: "combined" }),
+    "combined",
+  );
+  assert.equal(getEffectivePullLens({ readingLens: "tarot" }, pull, undefined, true), "combined");
 });
 
 test("ships substantial, original bilingual meanings and reflection prompts", () => {
@@ -118,7 +212,7 @@ test("ships substantial, original bilingual meanings and reflection prompts", ()
   }
 });
 
-test("renders the active lens and orientation as a visible reflection aid", async () => {
+test("reveals the active interpretation only after the reader writes first", async () => {
   const [component, copy, styles] = await Promise.all([
     readFile(new URL("../app/components/TarotApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/data/i18n.ts", import.meta.url), "utf8"),
@@ -127,12 +221,44 @@ test("renders the active lens and orientation as a visible reflection aid", asyn
 
   assert.match(component, /getInterpretationPerspective\(cardInterpretation, effectiveLens\)/);
   assert.match(component, /interpretationPerspective\[activePull\.orientation\]\[language\]/);
+  assert.match(component, /revealedInterpretationKeys/);
+  assert.match(component, /isInterpretationRevealed/);
+  assert.match(component, /className="reader-interpretation-panel"/);
   assert.match(component, /className="interpretation-panel"/);
   assert.match(component, /aria-controls="card-interpretation-panel"/);
-  assert.match(component, /"interpretation\.jump"/);
+  assert.match(component, /"interpretation\.reveal"/);
   assert.match(component, /"interpretation\.updated"/);
   assert.match(component, /interpretationPerspective\.reflection\[language\]/);
+  assert.ok(
+    component.indexOf('className="reader-interpretation-panel"') <
+      component.indexOf('className="interpretation-panel"'),
+    "the reader's interpretation field must precede the companion interpretation",
+  );
+  assert.match(
+    component,
+    /\{[^{}]*\bisInterpretationRevealed\b[^{}]*&&\s*\([\s\S]*?className="interpretation-panel"/,
+    "the companion panel must be gated by an explicit reveal state",
+  );
+  assert.match(
+    component,
+    /activePull\.interpretation\.trim\(\)/,
+    "blank or whitespace-only reader text must not unlock the companion interpretation",
+  );
+  assert.match(component, /interpretationCardId:\s*activePull\.cardId === card\.id/);
+  assert.match(component, /activePull\.interpretationCardId \?\? activePull\.cardId/);
+  assert.match(component, /activePull\.interpretationCardId === activeCard\?\.id/);
+  assert.match(component, /aria-pressed=\{effectiveLens === deck\}/);
+  assert.match(
+    component,
+    /activePull\.lensOverride \?\? activePosition\?\.defaultLens \?\? pickerDeck/,
+    "card selection must preserve Dual Aspect's per-position default lens",
+  );
+  assert.ok(
+    [...copy.matchAll(/"interpretation\.reveal"\s*:/g)].length >= 2,
+    "the reveal action must be localized in English and Dutch",
+  );
   assert.match(copy, /"interpretation\.disclaimer"/);
+  assert.match(styles, /\.reader-interpretation-panel\s*\{/);
   assert.match(styles, /\.interpretation-panel \{/);
   assert.match(styles, /\.interpretation-keywords \{/);
   assert.match(styles, /\.interpretation-reflection \{/);

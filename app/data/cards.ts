@@ -1,5 +1,9 @@
 export type CardLanguage = "en" | "nl";
 
+export type CardDeck = "tarot" | "oracle";
+
+type CardReadingLens = "combined" | CardDeck | "mixed";
+
 export type CardArcana = "major" | "minor" | "combined";
 
 export type TarotSuit = "wands" | "chalices" | "swords" | "pentacles";
@@ -35,6 +39,8 @@ export interface CardDefinition {
   readonly prismaTitleNl: string | null;
   readonly cosmaTitleEn: string;
   readonly cosmaAliasNl: string | null;
+  readonly tarotSearchAliases: readonly string[];
+  readonly oracleSearchAliases: readonly string[];
   readonly searchAliases: readonly string[];
   readonly combinedOnly: boolean;
 }
@@ -82,7 +88,8 @@ const major = (
   prismaTitleNl: string,
   cosmaTitleEn: string,
   cosmaAliasNl: string,
-  aliases: readonly string[] = [],
+  tarotAliases: readonly string[] = [],
+  oracleAliases: readonly string[] = [],
 ): CardDefinition => ({
   id: `major-${String(order).padStart(2, "0")}`,
   order,
@@ -93,12 +100,23 @@ const major = (
   prismaTitleNl,
   cosmaTitleEn,
   cosmaAliasNl,
+  tarotSearchAliases: uniqueAliases(
+    prismaTitleEn,
+    prismaTitleNl,
+    ...tarotAliases,
+  ),
+  oracleSearchAliases: uniqueAliases(
+    cosmaTitleEn,
+    cosmaAliasNl,
+    ...oracleAliases,
+  ),
   searchAliases: uniqueAliases(
     prismaTitleEn,
     prismaTitleNl,
     cosmaTitleEn,
     cosmaAliasNl,
-    ...aliases,
+    ...tarotAliases,
+    ...oracleAliases,
   ),
   combinedOnly: false,
 });
@@ -302,6 +320,24 @@ const buildMinorSuit = (
       prismaTitleNl,
       cosmaTitleEn,
       cosmaAliasNl,
+      tarotSearchAliases: uniqueAliases(
+        prismaTitleEn,
+        prismaTitleNl,
+        `${rank.numeral} of ${definition.prismaSuitEn}`,
+        `${rank.numeral} van ${definition.prismaSuitNl}`,
+        ...definition.prismaSuitAliasesEn.map(
+          (suit) => `${rank.en} of ${suit}`,
+        ),
+        ...definition.prismaSuitAliasesNl.map(
+          (suit) => `${rank.nl} van ${suit}`,
+        ),
+      ),
+      oracleSearchAliases: uniqueAliases(
+        cosmaTitleEn,
+        cosmaAliasNl,
+        `${rank.numeral} of ${definition.cosmaSuitEn}`,
+        `${rank.numeral} van ${definition.cosmaSuitNl}`,
+      ),
       searchAliases: uniqueAliases(
         prismaTitleEn,
         prismaTitleNl,
@@ -337,6 +373,23 @@ const buildMinorSuit = (
         prismaTitleNl,
         cosmaTitleEn: court.cosmaTitleEn,
         cosmaAliasNl: court.cosmaAliasNl,
+        tarotSearchAliases: uniqueAliases(
+          prismaTitleEn,
+          prismaTitleNl,
+          ...definition.prismaSuitAliasesEn.map(
+            (suit) => `${court.prismaRankEn} of ${suit}`,
+          ),
+          ...definition.prismaSuitAliasesNl.map(
+            (suit) => `${court.prismaRankNl} van ${suit}`,
+          ),
+          ...(court.rankAliasesNl ?? []).map(
+            (rank) => `${rank} van ${definition.prismaSuitNl}`,
+          ),
+        ),
+        oracleSearchAliases: uniqueAliases(
+          court.cosmaTitleEn,
+          court.cosmaAliasNl,
+        ),
         searchAliases: uniqueAliases(
           prismaTitleEn,
           prismaTitleNl,
@@ -407,9 +460,10 @@ const MAJOR_ARCANA: readonly CardDefinition[] = [
     "De Zegewagen",
     "The Spirit Plane",
     "De Geestenwereld",
-    ["Chariot", "Zegewagen", "Het Zielsrijk"],
+    ["Chariot", "Zegewagen"],
+    ["Het Zielsrijk"],
   ),
-  major(8, "Strength", "Kracht", "The Orbs", "De Sferen", [
+  major(8, "Strength", "Kracht", "The Orbs", "De Sferen", [], [
     "De Lichtbollen",
   ]),
   major(
@@ -448,13 +502,11 @@ const MAJOR_ARCANA: readonly CardDefinition[] = [
   major(15, "The Devil", "De Duivel", "The Vessel", "Het Omhulsel", [
     "Devil",
     "Duivel",
-    "Het Vat",
-  ]),
+  ], ["Het Vat"]),
   major(16, "The Tower", "De Toren", "The Shore", "De Oever", [
     "Tower",
     "Toren",
-    "De Kust",
-  ]),
+  ], ["De Kust"]),
   major(17, "The Star", "De Ster", "The Veil", "De Sluier", [
     "Star",
     "Ster",
@@ -469,7 +521,8 @@ const MAJOR_ARCANA: readonly CardDefinition[] = [
     "De Zon",
     "Infinite Paths",
     "Oneindige Paden",
-    ["Sun", "Zon", "Infinite Pathways"],
+    ["Sun", "Zon"],
+    ["Infinite Pathways"],
   ),
   major(
     20,
@@ -491,7 +544,7 @@ const MAJOR_ARCANA: readonly CardDefinition[] = [
 
 /**
  * Canonical sort order is zero-based: the 22 Majors, the four complete Tarot
- * suits, then the Mirra-only 79th card.
+ * suits, then the unique combined-only 79th card used by Mirra and mixed readings.
  */
 export const CARDS: readonly CardDefinition[] = [
   ...MAJOR_ARCANA,
@@ -508,6 +561,8 @@ export const CARDS: readonly CardDefinition[] = [
     prismaTitleNl: null,
     cosmaTitleEn: "Water Song",
     cosmaAliasNl: null,
+    tarotSearchAliases: ["Garden Chimes", "Garden Chimes and Water Song"],
+    oracleSearchAliases: ["Water Song", "Garden Chimes and Water Song"],
     searchAliases: [
       "Garden Chimes",
       "Water Song",
@@ -554,4 +609,52 @@ export function getCardDisplayName(
   }
 
   return `${prismaTitle} / ${cosmaTitle}`;
+}
+
+/**
+ * Projects a paired Mirra catalog entry into one of the two physical-deck
+ * views. The stable card ID stays shared so a Tarot face and its Oracle face
+ * cannot accidentally be logged as two different physical cards.
+ */
+export function getCardDeckName(
+  card: CardDefinition,
+  language: CardLanguage,
+  deck: CardDeck,
+): string {
+  if (card.combinedOnly) return getCardDisplayName(card, language);
+
+  if (deck === "tarot") {
+    return language === "nl"
+      ? (card.prismaTitleNl ?? card.prismaTitleEn)
+      : card.prismaTitleEn;
+  }
+
+  return language === "nl"
+    ? (card.cosmaAliasNl ?? card.cosmaTitleEn)
+    : card.cosmaTitleEn;
+}
+
+export function getCardDeckPrintedName(
+  card: CardDefinition,
+  deck: CardDeck,
+): string {
+  if (card.combinedOnly) return getCardDisplayName(card, "en");
+  return deck === "tarot" ? card.prismaTitleEn : card.cosmaTitleEn;
+}
+
+export function getCardDeckSearchTerms(
+  card: CardDefinition,
+  deck: CardDeck,
+): readonly string[] {
+  return deck === "tarot" ? card.tarotSearchAliases : card.oracleSearchAliases;
+}
+
+/** Tarot and Oracle are 78-card views; Mirra and mixed readings retain the
+ * unique 79th combined card. */
+export function getCardsForReadingLens(
+  lens: CardReadingLens,
+): readonly CardDefinition[] {
+  return lens === "tarot" || lens === "oracle"
+    ? CARDS.filter((card) => !card.combinedOnly)
+    : CARDS;
 }

@@ -1085,11 +1085,44 @@ h3 {
 
 .artwork-button {
   width: min(84%, 352px);
+  position: relative;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
 }
+
+.artwork-button--switchable:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 5px;
+  border-radius: 18px;
+}
+
+.card-face-switch {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  padding: 7px 10px;
+  border: 1px solid rgba(232, 197, 111, 0.52);
+  border-radius: 12px;
+  background: rgba(3, 21, 28, 0.9);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.34);
+  color: var(--ink);
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.card-face-switch strong {
+  color: var(--gold);
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.card-face-switch small { color: var(--ink-soft); font-size: 9px; }
 
 .artwork-empty-callout {
   position: absolute;
@@ -1201,6 +1234,68 @@ h3 {
 .quick-card-controls .field-block { align-self: stretch; }
 .quick-card-controls .field-label { margin-bottom: 6px; }
 .quick-card-controls .segmented-control { height: auto; min-height: 54px; }
+.quick-card-controls--single { grid-template-columns: minmax(0, 1fr); }
+
+.reader-interpretation-panel {
+  width: min(100%, 620px);
+  display: grid;
+  gap: 12px;
+  margin: 12px auto 4px;
+  padding: 19px 20px;
+  scroll-margin-top: 240px;
+  border: 1px solid rgba(120, 201, 185, 0.34);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(120, 201, 185, 0.12), transparent 38%),
+    rgba(8, 33, 41, 0.88);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
+}
+
+.reader-interpretation-panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.reader-interpretation-panel h3 {
+  margin: 0;
+  font-size: clamp(24px, 4vw, 31px);
+}
+
+.reader-interpretation-panel > p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.interpretation-step {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(120, 201, 185, 0.5);
+  border-radius: 50%;
+  color: var(--success);
+  font-family: var(--serif);
+}
+
+.interpretation-reveal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.interpretation-reveal-row small {
+  max-width: 350px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.interpretation-reveal-row button { flex: 0 0 auto; }
+.interpretation-reveal-row button:disabled { opacity: 0.38; cursor: not-allowed; }
 
 .interpretation-panel {
   width: min(100%, 620px);
@@ -1772,7 +1867,55 @@ button.reading-completion-action {
   color: var(--ink);
 }
 
-.card-picker .filter-row { margin-bottom: 6px; }
+.picker-controls-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  scrollbar-width: thin;
+}
+
+.deck-switch {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid rgba(232, 197, 111, 0.28);
+  border-radius: 13px;
+  background: rgba(232, 197, 111, 0.06);
+}
+
+.deck-switch button,
+.picker-deck-label {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.deck-switch button { background: transparent; cursor: pointer; }
+.deck-switch button[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.picker-deck-label {
+  flex: 0 0 auto;
+  border-color: rgba(232, 197, 111, 0.3);
+  background: rgba(232, 197, 111, 0.07);
+  color: var(--gold);
+}
+
+.card-picker .filter-row { flex: 0 0 auto; flex-wrap: nowrap; }
 .picker-meta {
   display: flex;
   align-items: baseline;
@@ -2107,6 +2250,15 @@ button.reading-completion-action {
     padding: 16px;
     border-radius: 17px;
   }
+  .reader-interpretation-panel {
+    margin-top: 10px;
+    padding: 16px;
+    border-radius: 17px;
+  }
+  .interpretation-reveal-row { align-items: stretch; flex-direction: column; gap: 9px; }
+  .interpretation-reveal-row button,
+  .interpretation-reveal-row .primary-action,
+  .interpretation-reveal-row .secondary-action { width: 100%; }
   .interpretation-panel > header { align-items: stretch; flex-direction: column; gap: 8px; }
   .interpretation-mode { align-self: flex-start; }
   .interpretation-meaning { font-size: 17px; }
@@ -2224,6 +2376,7 @@ button.reading-completion-action {
   .card-search,
   .picker-search-wrap { margin-bottom: 3px; }
   .card-picker .filter-row { min-height: 44px; margin-bottom: 1px; }
+  .picker-controls-row { min-height: 44px; padding-bottom: 1px; }
   .filter-row button { min-height: 44px; }
   .picker-meta {
     width: 1px;
